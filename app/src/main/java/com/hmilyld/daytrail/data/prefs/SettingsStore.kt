@@ -22,7 +22,13 @@ enum class SamplingTier {
     HIGH_ACCURACY,
 }
 
-/** 一次记录会话的状态。 */
+/**
+ * 一次记录会话的状态。
+ *
+ * 注意：这个状态**不持久化**。它是进程内的运行状态，由 RecordingService 持有。
+ * 早期版本把它写进 DataStore，导致进程被杀后重开时界面仍显示「记录中」，
+ * 但服务早已不存在，用户以为在记录其实没有。见 AppContainer.recordingState。
+ */
 enum class RecordingState {
     IDLE,
     RECORDING,
@@ -34,6 +40,8 @@ private val Context.dataStore: DataStore<Preferences> by
 
 /**
  * 用户设置的唯一读写入口。全部通过 DataStore，不碰 SharedPreferences。
+ *
+ * 只存「跨会话仍然有效」的设置；运行状态不放这里。
  */
 class SettingsStore(
     private val context: Context,

@@ -157,6 +157,17 @@ spotless {
     }
 }
 
+/**
+ * Room 的 schema 导出位置。
+ *
+ * 必须导出：轨迹是用户长期积累的数据，后续任何表结构变更都需要基于
+ * schema 历史写 Migration，没有历史就只能猜。
+ */
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+    arg("room.generateKotlin", "true")
+}
+
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

@@ -47,6 +47,17 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!--
+            记录服务。Android 14+ 必须声明 foregroundServiceType，
+            否则 startForeground 会抛 MissingForegroundServiceTypeException。
+            stopWithTask=false：从最近任务划掉应用不应中断记录。
+        -->
+        <service
+            android:name=".location.RecordingService"
+            android:exported="false"
+            android:foregroundServiceType="location"
+            android:stopWithTask="false" />
     </application>
 
 </manifest>

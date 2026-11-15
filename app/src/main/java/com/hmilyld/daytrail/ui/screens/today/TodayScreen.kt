@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -24,15 +25,22 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.hmilyld.daytrail.AppContainer
 import com.hmilyld.daytrail.R
 import com.hmilyld.daytrail.data.prefs.RecordingState
+import com.hmilyld.daytrail.location.RecordingService
+import com.hmilyld.daytrail.ui.appViewModelFactory
 import com.hmilyld.daytrail.ui.components.StatBlock
 import com.hmilyld.daytrail.ui.components.map.AmapView
 import com.hmilyld.daytrail.ui.components.map.MapUnavailablePlaceholder
@@ -44,32 +52,34 @@ import com.hmilyld.daytrail.ui.theme.DayTrailTheme
  *
  * 结构（自上而下）：
  * 1. 全屏地图（占满剩余空间）
- * 2. 悬浮状态胶囊（左上角）
- * 3. 底部统计面板（里程 / 时长 / 停留）
- *
- * 状态胶囊不只靠颜色区分，必须带文字，满足无障碍要求。
+ * 2. 悬浮状态胶囊（左上角，避开状态栏）
+ * 3. 底部统计面板（里程 / 时长 / 停留 + 控制按钮）
  */
 @Composable
 fun TodayScreen(
-    container: com.hmilyld.daytrail.AppContainer,
+    container: AppContainer,
     onOpenDay: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val viewModel: TodayViewModel = viewModel(factory = appViewModelFactory(container))
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+
     TodayContent(
-        state = RecordingState.IDLE,
-        distanceKm = "0.0",
-        duration = "0h00m",
-        stopCount = 0,
+        state = state,
+        onStart = { RecordingService.start(context) },
+        onPause = { RecordingService.pause(context) },
+        onStop = { RecordingService.stop(context) },
         modifier = modifier,
     )
 }
 
 @Composable
 private fun TodayContent(
-    state: RecordingState,
-    distanceKm: String,
-    duration: String,
-    stopCount: Int,
+    state: TodayUiState,
+    onStart: () -> Unit,
+    onPause: () -> Unit,
+    onStop: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Box(modifier = modifier.fillMaxSize()) {
@@ -83,8 +93,8 @@ private fun TodayContent(
         }
 
         RecordingPill(
-            state = state,
-            duration = duration,
+            state = state.recordingState,
+            duration = state.duration,
             modifier =
                 Modifier
                     .align(Alignment.TopStart)
@@ -93,9 +103,9 @@ private fun TodayContent(
 
         StatsSheet(
             state = state,
-            distanceKm = distanceKm,
-            duration = duration,
-            stopCount = stopCount,
+            onStart = onStart,
+            onPause = onPause,
+            onStop = onStop,
             modifier =
                 Modifier
                     .align(Alignment.BottomCenter)
@@ -105,8 +115,10 @@ private fun TodayContent(
 }
 
 /**
- * 记录状态胶囊。呼吸点用静态圆点代替动画：
- * 省电优先的应用不该为了装饰效果持续跑动画，也会干扰读屏。
+ * 记录状态胶囊。
+ *
+ * 呼吸点用静态圆点代替动画：省电优先的应用不该为了装饰效果持续跑动画，
+ * 也会干扰读屏。状态靠文字区分，不只靠颜色。
  */
 @Composable
 private fun RecordingPill(
@@ -159,10 +171,10 @@ private fun RecordingPill(
 /** 底部统计面板，含开始 / 暂停 / 结束控制。 */
 @Composable
 private fun StatsSheet(
-    state: RecordingState,
-    distanceKm: String,
-    duration: String,
-    stopCount: Int,
+    state: TodayUiState,
+    onStart: () -> Unit,
+    onPause: () -> Unit,
+    onStop: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Surface(
@@ -175,19 +187,19 @@ private fun StatsSheet(
         Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
             Row(modifier = Modifier.fillMaxWidth()) {
                 StatBlock(
-                    value = distanceKm,
+                    value = state.distanceKm,
                     unit = stringResource(R.string.today_stat_distance),
                     label = "",
                     modifier = Modifier.weight(1f),
                 )
                 StatBlock(
-                    value = duration,
+                    value = state.duration,
                     unit = "",
                     label = stringResource(R.string.today_stat_duration),
                     modifier = Modifier.weight(1f),
                 )
                 StatBlock(
-                    value = stopCount.toString(),
+                    value = state.stopCount.toString(),
                     unit = "",
                     label = stringResource(R.string.today_stat_stops),
                     modifier = Modifier.weight(1f),
@@ -199,13 +211,23 @@ private fun StatsSheet(
                 color = MaterialTheme.colorScheme.outlineVariant,
             )
 
-            RecordingControls(state = state)
+            RecordingControls(
+                state = state.recordingState,
+                onStart = onStart,
+                onPause = onPause,
+                onStop = onStop,
+            )
         }
     }
 }
 
 @Composable
-private fun RecordingControls(state: RecordingState) {
+private fun RecordingControls(
+    state: RecordingState,
+    onStart: () -> Unit,
+    onPause: () -> Unit,
+    onStop: () -> Unit,
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -213,7 +235,7 @@ private fun RecordingControls(state: RecordingState) {
         when (state) {
             RecordingState.IDLE ->
                 Button(
-                    onClick = {},
+                    onClick = onStart,
                     modifier = Modifier.fillMaxWidth(),
                     contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
                 ) {
@@ -222,13 +244,13 @@ private fun RecordingControls(state: RecordingState) {
                         contentDescription = null,
                         modifier = Modifier.size(ButtonDefaults.IconSize),
                     )
-                    Box(modifier = Modifier.width(ButtonDefaults.IconSpacing)) {}
+                    Spacer(modifier = Modifier.width(ButtonDefaults.IconSpacing))
                     Text(text = stringResource(R.string.today_action_start))
                 }
 
             RecordingState.RECORDING -> {
                 FilledTonalButton(
-                    onClick = {},
+                    onClick = onPause,
                     modifier = Modifier.weight(1f),
                 ) {
                     Icon(
@@ -236,11 +258,11 @@ private fun RecordingControls(state: RecordingState) {
                         contentDescription = null,
                         modifier = Modifier.size(ButtonDefaults.IconSize),
                     )
-                    Box(modifier = Modifier.width(ButtonDefaults.IconSpacing)) {}
+                    Spacer(modifier = Modifier.width(ButtonDefaults.IconSpacing))
                     Text(text = stringResource(R.string.today_action_pause))
                 }
                 Button(
-                    onClick = {},
+                    onClick = onStop,
                     modifier = Modifier.weight(1f),
                     colors =
                         ButtonDefaults.buttonColors(
@@ -253,14 +275,14 @@ private fun RecordingControls(state: RecordingState) {
                         contentDescription = null,
                         modifier = Modifier.size(ButtonDefaults.IconSize),
                     )
-                    Box(modifier = Modifier.width(ButtonDefaults.IconSpacing)) {}
+                    Spacer(modifier = Modifier.width(ButtonDefaults.IconSpacing))
                     Text(text = stringResource(R.string.today_action_stop))
                 }
             }
 
             RecordingState.PAUSED -> {
                 Button(
-                    onClick = {},
+                    onClick = onStart,
                     modifier = Modifier.weight(1f),
                 ) {
                     Icon(
@@ -268,11 +290,11 @@ private fun RecordingControls(state: RecordingState) {
                         contentDescription = null,
                         modifier = Modifier.size(ButtonDefaults.IconSize),
                     )
-                    Box(modifier = Modifier.width(ButtonDefaults.IconSpacing)) {}
+                    Spacer(modifier = Modifier.width(ButtonDefaults.IconSpacing))
                     Text(text = stringResource(R.string.today_action_start))
                 }
                 FilledTonalButton(
-                    onClick = {},
+                    onClick = onStop,
                     modifier = Modifier.weight(1f),
                 ) {
                     Icon(
@@ -280,7 +302,7 @@ private fun RecordingControls(state: RecordingState) {
                         contentDescription = null,
                         modifier = Modifier.size(ButtonDefaults.IconSize),
                     )
-                    Box(modifier = Modifier.width(ButtonDefaults.IconSpacing)) {}
+                    Spacer(modifier = Modifier.width(ButtonDefaults.IconSpacing))
                     Text(text = stringResource(R.string.today_action_stop))
                 }
             }
@@ -293,10 +315,15 @@ private fun RecordingControls(state: RecordingState) {
 private fun TodayIdlePreview() {
     DayTrailTheme {
         TodayContent(
-            state = RecordingState.IDLE,
-            distanceKm = "0.0",
-            duration = "0h00m",
-            stopCount = 0,
+            state =
+                TodayUiState(
+                    dayKey =
+                        com.hmilyld.daytrail.core
+                            .DayKey("2026-11-15"),
+                ),
+            onStart = {},
+            onPause = {},
+            onStop = {},
         )
     }
 }
@@ -306,10 +333,20 @@ private fun TodayIdlePreview() {
 private fun TodayRecordingPreview() {
     DayTrailTheme {
         TodayContent(
-            state = RecordingState.RECORDING,
-            distanceKm = "12.4",
-            duration = "2h14m",
-            stopCount = 8,
+            state =
+                TodayUiState(
+                    dayKey =
+                        com.hmilyld.daytrail.core
+                            .DayKey("2026-11-15"),
+                    recordingState = RecordingState.RECORDING,
+                    distanceKm = "12.4",
+                    duration = "2h14m",
+                    stopCount = 8,
+                    pointCount = 412,
+                ),
+            onStart = {},
+            onPause = {},
+            onStop = {},
         )
     }
 }

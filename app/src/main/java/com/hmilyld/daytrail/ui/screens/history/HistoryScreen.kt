@@ -22,15 +22,19 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.hmilyld.daytrail.AppContainer
 import com.hmilyld.daytrail.R
+import com.hmilyld.daytrail.ui.appViewModelFactory
 import com.hmilyld.daytrail.ui.components.EmptyState
 import com.hmilyld.daytrail.ui.theme.DayTrailTheme
 
@@ -38,35 +42,27 @@ import com.hmilyld.daytrail.ui.theme.DayTrailTheme
  * 历史页：月历热力 + 日卡片列表。
  *
  * 用 LazyVerticalGrid + GridCells.Adaptive(160.dp)：
- * 手机上是单列，平板上自动变两列，不需要手写断点判断。
+ * 手机上是单列，平板上自动变多列，不需要手写断点判断。
  */
 @Composable
 fun HistoryScreen(
-    container: com.hmilyld.daytrail.AppContainer,
+    container: AppContainer,
     onOpenDay: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val days = emptyList<DaySummary>()
+    val viewModel: HistoryViewModel = viewModel(factory = appViewModelFactory(container))
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
 
     HistoryContent(
-        days = days,
+        state = state,
         onOpenDay = onOpenDay,
         modifier = modifier,
     )
 }
 
-/** 日摘要。真实数据接入后由 Repository 提供。 */
-internal data class DaySummary(
-    val dateKey: String,
-    val title: String,
-    val subtitle: String,
-    val distanceKm: Double,
-    val heatLevel: Int,
-)
-
 @Composable
 private fun HistoryContent(
-    days: List<DaySummary>,
+    state: HistoryUiState,
     onOpenDay: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -81,15 +77,23 @@ private fun HistoryContent(
                     style = MaterialTheme.typography.headlineSmall,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
+                Text(
+                    text = "${state.year} 年 ${state.month} 月",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
                 MonthHeatmap(
-                    values = List(35) { 0 },
+                    year = state.year,
+                    month = state.month,
+                    monthlyKm = state.monthlyKm,
                     modifier = Modifier.padding(top = 12.dp),
                 )
                 HeatLegend(modifier = Modifier.padding(top = 8.dp))
             }
         }
 
-        if (days.isEmpty()) {
+        if (state.days.isEmpty()) {
             EmptyState(
                 icon = Icons.Outlined.CalendarMonth,
                 title = stringResource(R.string.history_empty_title),
@@ -104,8 +108,8 @@ private fun HistoryContent(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
-                items(items = days, key = { it.dateKey }) { day ->
-                    DayCard(day = day, onClick = { onOpenDay(day.dateKey) })
+                items(items = state.days, key = { it.dateKey }) { day ->
+                    DayCardItem(day = day, onClick = { onOpenDay(day.dateKey) })
                 }
             }
         }
@@ -113,17 +117,22 @@ private fun HistoryContent(
 }
 
 /**
- * 月历热力：7 列 x 5 行，格子按当日里程深浅着色。
+ * 月历热力：按当月实际天数与首日偏移排布，不足一周的补空格。
  *
- * 这是纯装饰性网格，因此整体合并成一句语义描述，
- * 具体里程在下方日卡片里逐个可读，避免读屏念 35 个空白格子。
+ * 整体合并成一句语义描述：这是纯装饰性网格，
+ * 具体里程在下方日卡片里逐个可读，避免读屏念一串空白格子。
  */
 @Composable
 private fun MonthHeatmap(
-    values: List<Int>,
+    year: Int,
+    month: Int,
+    monthlyKm: List<Double>,
     modifier: Modifier = Modifier,
 ) {
-    val description = stringResource(R.string.history_title)
+    val leading = HistoryViewModel.leadingBlanks(year, month)
+    val total = HistoryViewModel.cellCount(year, month)
+    val description = "${year}年${month}月，共 ${monthlyKm.count { it > 0 }} 天有记录"
+
     Column(
         modifier =
             modifier
@@ -131,21 +140,22 @@ private fun MonthHeatmap(
                 .clearAndSetSemantics { contentDescription = description },
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        repeat(5) { row ->
+        repeat(total / 7) { row ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 repeat(7) { col ->
                     val index = row * 7 + col
-                    val level = values.getOrElse(index) { 0 }
+                    val dayIndex = index - leading
+                    val km = monthlyKm.getOrNull(dayIndex)
                     Box(
                         modifier =
                             Modifier
                                 .weight(1f)
                                 .aspectRatio(1f)
                                 .background(
-                                    color = heatColor(level),
+                                    color = heatColor(HistoryViewModel.heatLevelOf(km ?: -1.0)),
                                     shape = MaterialTheme.shapes.extraSmall,
                                 ),
                     )
@@ -155,9 +165,11 @@ private fun MonthHeatmap(
     }
 }
 
+/** 超出范围的格子（首日之前、月末之后）用透明，避免误以为是「零里程」。 */
 @Composable
 private fun heatColor(level: Int) =
     when (level) {
+        -1 -> MaterialTheme.colorScheme.surface
         0 -> MaterialTheme.colorScheme.surfaceContainerHigh
         1 -> MaterialTheme.colorScheme.primaryContainer
         2 -> MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
@@ -197,8 +209,8 @@ private fun HeatLegend(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun DayCard(
-    day: DaySummary,
+private fun DayCardItem(
+    day: DayCard,
     onClick: () -> Unit,
 ) {
     Card(
@@ -222,27 +234,68 @@ private fun DayCard(
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    text = "${day.distanceKm} km",
+                    text = stringResource(R.string.history_distance_km, formatKm(day.distanceKm)),
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.primary,
                 )
             }
-            Text(
-                text = day.subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp),
-                textAlign = TextAlign.Start,
+            HeatBar(
+                level = day.heatLevel,
+                modifier = Modifier.padding(top = 10.dp),
             )
         }
     }
 }
 
+/** 日卡片底部的里程条。宽度按分档比例，避免视觉上所有日子都一样重。 */
+@Composable
+private fun HeatBar(
+    level: Int,
+    modifier: Modifier = Modifier,
+) {
+    val fraction =
+        when (level) {
+            0 -> 0.0f
+            1 -> 0.25f
+            2 -> 0.5f
+            3 -> 0.75f
+            else -> 1.0f
+        }
+    Box(
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .size(height = 3.dp, width = 0.dp)
+                .background(
+                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    shape = MaterialTheme.shapes.extraSmall,
+                ),
+    ) {
+        if (fraction > 0f) {
+            Box(
+                modifier =
+                    Modifier
+                        .fillMaxWidth(fraction)
+                        .size(height = 3.dp, width = 0.dp)
+                        .background(
+                            color = MaterialTheme.colorScheme.primary,
+                            shape = MaterialTheme.shapes.extraSmall,
+                        ),
+            )
+        }
+    }
+}
+
+private fun formatKm(km: Double): String = if (km >= 10) "%.0f".format(km) else "%.1f".format(km)
+
 @Preview(showBackground = true, name = "历史 - 空")
 @Composable
 private fun HistoryEmptyPreview() {
     DayTrailTheme {
-        HistoryContent(days = emptyList(), onOpenDay = {})
+        HistoryContent(
+            state = HistoryUiState(year = 2026, month = 11),
+            onOpenDay = {},
+        )
     }
 }
 
@@ -251,10 +304,16 @@ private fun HistoryEmptyPreview() {
 private fun HistoryListPreview() {
     DayTrailTheme {
         HistoryContent(
-            days =
-                listOf(
-                    DaySummary("2026-11-14", "11月14日 周六", "上海 → 杭州 · 6 处停留", 86.2, 4),
-                    DaySummary("2026-11-13", "11月13日 周五", "杭州市内 · 9 处停留", 41.7, 3),
+            state =
+                HistoryUiState(
+                    year = 2026,
+                    month = 11,
+                    monthlyKm = List(30) { if (it % 3 == 0) 40.0 else 0.0 },
+                    days =
+                        listOf(
+                            DayCard("2026-11-14", "11月14日", 86.2, 4),
+                            DayCard("2026-11-13", "11月13日", 41.7, 3),
+                        ),
                 ),
             onOpenDay = {},
         )

@@ -76,4 +76,32 @@
     <!-- 地图不可用 -->
     <string name="map_unavailable_title">地图无法在此设备显示</string>
     <string name="map_unavailable_body">高德地图 SDK 仅提供 ARM 原生库，模拟器多为 x86_64 架构，因此地图区域显示为空白。轨迹记录、存储与统计功能不受影响，安装到 ARM 真机后地图即可正常显示。</string>
+
+    <!-- 记录通知 -->
+    <string name="notification_channel_recording">轨迹记录</string>
+    <string name="notification_channel_recording_desc">记录轨迹时在通知栏显示状态，可随时暂停或结束</string>
+
+    <!-- 记录中 -->
+    <string name="record_starting">开始记录</string>
+    <string name="record_paused_status">已暂停</string>
+    <string name="record_sleeping_status">静止中</string>
+    <string name="record_elapsed">已记录 %1$d 分钟 · %2$d 个点</string>
+
+    <!-- 历史与详情 -->
+    <string name="day_detail_empty">这一天还没有轨迹</string>
+    <string name="day_detail_summary">%1$s · %2$s · %3$d 处停留</string>
+    <string name="timeline_gap_title">数据缺失</string>
+    <string name="timeline_gap_detail">约 %1$d 分钟无数据</string>
+    <string name="timeline_stay_detail">停留 %1$d 分钟</string>
+    <string name="timeline_start">开始记录</string>
+    <string name="timeline_end">结束记录</string>
+    <string name="history_distance_km">%1$s km</string>
+    <string name="history_stops">%1$d 处停留</string>
+
+    <!-- 设置补充 -->
+    <string name="settings_storage_points">%1$d 个采样点</string>
+    <string name="settings_clear_day">清除这一天的数据</string>
+    <string name="settings_clear_all">清除全部数据</string>
+    <string name="settings_clear_confirm_title">确认清除？</string>
+    <string name="settings_clear_confirm_body">清除后无法恢复，且不会同步到任何地方。</string>
 </resources>
