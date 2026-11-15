@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">行迹</string>
+
+    <!-- 底部导航 / 导航栏 -->
+    <string name="nav_today">今日</string>
+    <string name="nav_history">历史</string>
+    <string name="nav_settings">我的</string>
+
+    <!-- 通用 -->
+    <string name="action_back">返回</string>
+    <string name="action_confirm">确定</string>
+    <string name="action_cancel">取消</string>
+    <string name="action_retry">重试</string>
+
+    <!-- 今日 -->
+    <string name="today_title">今天</string>
+    <string name="today_stat_distance">公里</string>
+    <string name="today_stat_duration">时长</string>
+    <string name="today_stat_stops">停留</string>
+    <string name="today_recording">记录中</string>
+    <string name="today_paused">已暂停</string>
+    <string name="today_idle">未开始</string>
+    <string name="today_action_start">开始记录</string>
+    <string name="today_action_pause">暂停</string>
+    <string name="today_action_stop">结束</string>
+    <string name="today_empty_title">还没有轨迹</string>
+    <string name="today_empty_body">点「开始记录」，行迹会在后台记下你今天走过的地方。</string>
+
+    <!-- 历史 -->
+    <string name="history_title">历史</string>
+    <string name="history_empty_title">这个月还没有记录</string>
+    <string name="history_empty_body">记录过几天之后，这里会按月显示每天的里程。</string>
+    <string name="history_legend_less">少</string>
+    <string name="history_legend_more">多</string>
+
+    <!-- 单日详情 -->
+    <string name="day_detail_title">当天详情</string>
+
+    <!-- 行程 -->
+    <string name="trip_title">行程</string>
+
+    <!-- 设置 -->
+    <string name="settings_title">我的</string>
+    <string name="settings_section_recording">记录</string>
+    <string name="settings_section_data">数据</string>
+    <string name="settings_section_permission">权限</string>
+    <string name="settings_section_about">关于</string>
+    <string name="settings_sampling_tier">采样档位</string>
+    <string name="settings_sampling_tier_desc">省电优先：静止 10 分 / 步行 3 分 / 驾车 1 分</string>
+    <string name="settings_learning">自我学习</string>
+    <string name="settings_learning_desc">学会你的作息与常去地点，进一步省电</string>
+    <string name="settings_export">导出数据</string>
+    <string name="settings_export_desc">GeoJSON 与 GPX，可导进其他地图</string>
+    <string name="settings_storage">数据占用</string>
+    <string name="settings_version">版本</string>
+
+    <!-- 引导 -->
+    <string name="onboarding_title">开始之前</string>
+    <string name="onboarding_location_title">位置权限</string>
+    <string name="onboarding_location_body">需要「精确位置」才能记录轨迹。</string>
+    <string name="onboarding_background_title">始终允许位置</string>
+    <string name="onboarding_background_body">选择「始终允许」，否则息屏后无法继续记录。</string>
+    <string name="onboarding_notification_title">通知权限</string>
+    <string name="onboarding_notification_body">记录时会在通知栏常驻一条状态，方便随时暂停。</string>
+    <string name="onboarding_battery_title">电池优化白名单</string>
+    <string name="onboarding_battery_body">加入白名单后，系统不会在后台杀掉记录服务。</string>
+    <string name="onboarding_action_grant">去设置</string>
+    <string name="onboarding_action_done">已完成</string>
+    <string name="onboarding_action_finish">开始使用</string>
+
+    <!-- 无障碍 -->
+    <string name="cd_map">轨迹地图</string>
+    <string name="cd_recording_indicator">正在记录</string>
+
+    <!-- 地图不可用 -->
+    <string name="map_unavailable_title">地图无法在此设备显示</string>
+    <string name="map_unavailable_body">高德地图 SDK 仅提供 ARM 原生库，模拟器多为 x86_64 架构，因此地图区域显示为空白。轨迹记录、存储与统计功能不受影响，安装到 ARM 真机后地图即可正常显示。</string>
+</resources>
