@@ -1,5 +1,6 @@
 package com.hmilyld.daytrail.location
 
+import com.hmilyld.daytrail.core.CoordinateTransform
 import com.hmilyld.daytrail.core.DayKey
 import com.hmilyld.daytrail.core.DayKeys
 import com.hmilyld.daytrail.data.db.entity.TrackPointEntity
@@ -37,19 +38,32 @@ class TrackRecorder(
     /**
      * 处理一个定位结果。
      *
+     * 坐标统一转成 GCJ-02 再入库：高德来源本身就是 GCJ-02，
+     * 系统定位来源是 WGS-84，不转换会让轨迹偏移 50–500 米。
+     *
      * @return 是否被接受。被拒绝的点不会进缓冲，也不影响 [lastAccepted]
      */
     suspend fun offer(fix: LocationFix): Boolean {
         if (fix.errorCode != 0) return false
 
+        val normalized =
+            if (fix.coordinateSystem == CoordinateSystem.WGS84) {
+                fix.copy(
+                    point = CoordinateTransform.wgs84ToGcj02(fix.point),
+                    coordinateSystem = CoordinateSystem.GCJ02,
+                )
+            } else {
+                fix
+            }
+
         val sample =
             TrackSample(
-                timestampMs = fix.timestampMs,
-                point = fix.point,
-                accuracyMeters = fix.accuracyMeters,
-                speedMps = fix.speedMps,
-                bearingDegrees = fix.bearingDegrees,
-                isMock = fix.isMock,
+                timestampMs = normalized.timestampMs,
+                point = normalized.point,
+                accuracyMeters = normalized.accuracyMeters,
+                speedMps = normalized.speedMps,
+                bearingDegrees = normalized.bearingDegrees,
+                isMock = normalized.isMock,
             )
 
         val verdict = filter.judge(lastAccepted, sample)

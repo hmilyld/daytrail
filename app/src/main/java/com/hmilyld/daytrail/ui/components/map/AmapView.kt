@@ -6,10 +6,10 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.amap.api.maps.AMap
 import com.amap.api.maps.TextureMapView
 
@@ -33,6 +33,7 @@ fun AmapView(
     modifier: Modifier = Modifier,
     onMapReady: (AMap) -> Unit = {},
     onMapReleased: () -> Unit = {},
+    onMapCreated: (AMap) -> Unit = {},
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -61,6 +62,7 @@ fun AmapView(
         lifecycleOwner.lifecycle.addObserver(observer)
 
         onMapReady(mapView.map)
+        onMapCreated(mapView.map)
 
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)

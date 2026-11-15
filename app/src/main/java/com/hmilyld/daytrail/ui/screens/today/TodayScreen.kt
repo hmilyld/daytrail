@@ -26,8 +26,12 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -36,6 +40,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.amap.api.maps.AMap
 import com.hmilyld.daytrail.AppContainer
 import com.hmilyld.daytrail.R
 import com.hmilyld.daytrail.data.prefs.RecordingState
@@ -44,6 +49,7 @@ import com.hmilyld.daytrail.ui.appViewModelFactory
 import com.hmilyld.daytrail.ui.components.StatBlock
 import com.hmilyld.daytrail.ui.components.map.AmapView
 import com.hmilyld.daytrail.ui.components.map.MapUnavailablePlaceholder
+import com.hmilyld.daytrail.ui.components.map.TrackOverlay
 import com.hmilyld.daytrail.ui.components.map.rememberAmapAvailable
 import com.hmilyld.daytrail.ui.theme.DayTrailTheme
 
@@ -82,11 +88,21 @@ private fun TodayContent(
     onStop: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val mapAvailable = rememberAmapAvailable()
+    var amap by remember { mutableStateOf<AMap?>(null) }
+    val polylineColor = MaterialTheme.colorScheme.primary.toArgb()
+
     Box(modifier = modifier.fillMaxSize()) {
-        if (rememberAmapAvailable()) {
+        if (mapAvailable) {
             AmapView(
                 modifier = Modifier.fillMaxSize(),
-                onMapReady = { map -> map.uiSettings.isZoomControlsEnabled = false },
+                onMapCreated = { map -> amap = map },
+            )
+            TrackOverlay(
+                amap = amap,
+                points = state.trackPoints,
+                stays = state.stayMarkers,
+                polylineColor = polylineColor,
             )
         } else {
             MapUnavailablePlaceholder(modifier = Modifier.fillMaxSize())

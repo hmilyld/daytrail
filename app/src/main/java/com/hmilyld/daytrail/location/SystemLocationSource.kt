@@ -168,6 +168,8 @@ class SystemLocationSource(
                     @Suppress("DEPRECATION")
                     isFromMockProvider
                 }.getOrDefault(false),
+            // 系统 LocationManager 返回的是 GPS 原始坐标
+            coordinateSystem = CoordinateSystem.WGS84,
         )
 
     private companion object {

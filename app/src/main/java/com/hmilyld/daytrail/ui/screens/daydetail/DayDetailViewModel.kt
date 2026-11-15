@@ -3,18 +3,19 @@ package com.hmilyld.daytrail.ui.screens.daydetail
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hmilyld.daytrail.core.DayKeys
+import com.hmilyld.daytrail.core.GeoPoint
 import com.hmilyld.daytrail.core.formatDuration
 import com.hmilyld.daytrail.data.db.entity.DayGapEntity
 import com.hmilyld.daytrail.data.db.entity.StaySegmentEntity
-import com.hmilyld.daytrail.data.db.entity.TrackDayEntity
 import com.hmilyld.daytrail.data.db.entity.TrackPointEntity
 import com.hmilyld.daytrail.data.repo.TrackRepository
+import com.hmilyld.daytrail.ui.components.map.MapStayMarker
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.time.Instant
 import java.time.LocalDate
-import java.time.LocalDateTime
 import java.time.ZoneId
 
 /** 时间轴节点类型。 */
@@ -41,9 +42,16 @@ data class DayDetailUiState(
     val duration: String = "0m",
     val stopCount: Int = 0,
     val entries: List<TimelineEntry> = emptyList(),
-    val points: List<TrackPointEntity> = emptyList(),
+    /** 地图折线用的坐标（已按时间排序）。 */
+    val trackPoints: List<GeoPoint> = emptyList(),
+    /** 地图停留标记。 */
+    val stayMarkers: List<MapStayMarker> = emptyList(),
+    /** 地图的文字版行程，供 TalkBack 使用。 */
+    val accessibilitySummary: String = "",
     val loading: Boolean = true,
-)
+) {
+    val hasTrack: Boolean get() = trackPoints.isNotEmpty()
+}
 
 /**
  * 单日详情 ViewModel。
@@ -74,24 +82,19 @@ class DayDetailViewModel(
             val stays = repository.staysOfDay(key)
             val gaps = repository.gapsOfDay(key)
 
-            _uiState.value =
-                buildState(
-                    dateKey = dateKey,
-                    day = null,
-                    points = points,
-                    stays = stays,
-                    gaps = gaps,
-                ).copy(loading = false)
+            _uiState.value = buildState(dateKey, points, stays, gaps)
 
-            // 顺便读一次汇总，用于标题行的里程
+            // 汇总单独订阅：采集过程中里程会持续变化
             day.collect { trackDay ->
                 _uiState.value =
                     _uiState.value.copy(
                         distanceKm = formatKm(trackDay?.distanceMeters ?: 0.0),
                         duration =
                             formatDuration(
-                                ((trackDay?.movingMillis ?: 0L) + (trackDay?.stoppedMillis ?: 0L)) /
-                                    1000,
+                                (
+                                    (trackDay?.movingMillis ?: 0L) +
+                                        (trackDay?.stoppedMillis ?: 0L)
+                                ) / 1000,
                             ),
                     )
             }
@@ -100,7 +103,6 @@ class DayDetailViewModel(
 
     private fun buildState(
         dateKey: String,
-        day: TrackDayEntity?,
         points: List<TrackPointEntity>,
         stays: List<StaySegmentEntity>,
         gaps: List<DayGapEntity>,
@@ -122,8 +124,8 @@ class DayDetailViewModel(
             entries +=
                 TimelineEntry(
                     time = formatTime(stay.startMs, zone),
-                    title = if (stay.labelSource == "unnamed") "停留" else "停留",
-                    detail = "停留 ${stay.durationMinutes()} 分钟",
+                    title = stay.displayTitle(),
+                    detail = "停留 ${(stay.endMs - stay.startMs) / 60_000} 分钟",
                     kind = TimelineKind.STOP,
                 )
         }
@@ -148,31 +150,64 @@ class DayDetailViewModel(
                 )
         }
 
+        // 时间轴按时间排序，同刻按类型固定顺序（开始在前、结束在后）
+        val ordered = entries.sortedWith(compareBy({ it.time }, { kindOrder(it.kind) }))
+
+        val geoPoints = points.map { GeoPoint(it.latitude, it.longitude) }
+        val markers =
+            stays.map { stay ->
+                MapStayMarker(
+                    point = GeoPoint(stay.latitude, stay.longitude),
+                    label = null,
+                    durationMinutes = (stay.endMs - stay.startMs) / 60_000,
+                )
+            }
+
         return DayDetailUiState(
             dateKey = dateKey,
             title = formatTitle(dateKey),
-            distanceKm = formatKm(day?.distanceMeters ?: 0.0),
-            duration =
-                formatDuration(
-                    ((day?.movingMillis ?: 0L) + (day?.stoppedMillis ?: 0L)) / 1000,
-                ),
             stopCount = stays.size,
-            entries = entries,
-            points = points,
+            entries = ordered,
+            trackPoints = geoPoints,
+            stayMarkers = markers,
+            accessibilitySummary = buildAccessibilitySummary(geoPoints, stays),
+            loading = false,
         )
     }
 
-    private fun StaySegmentEntity.durationMinutes(): Long = (endMs - startMs) / 60_000
+    /** 停留点的显示标题。M2-B 接入地点命名后改为返回真实名称。 */
+    private fun StaySegmentEntity.displayTitle(): String = "停留"
+
+    /**
+     * 地图的文字版行程。
+     *
+     * 折线对读屏完全不可用，必须提供等价信息。
+     */
+    private fun buildAccessibilitySummary(
+        points: List<GeoPoint>,
+        stays: List<StaySegmentEntity>,
+    ): String {
+        if (points.isEmpty()) return ""
+        return if (stays.isEmpty()) {
+            "轨迹地图，共 ${points.size} 个采样点"
+        } else {
+            "轨迹地图，${stays.size} 处停留，共 ${points.size} 个采样点"
+        }
+    }
+
+    private fun kindOrder(kind: TimelineKind): Int =
+        when (kind) {
+            TimelineKind.START -> 0
+            TimelineKind.STOP -> 1
+            TimelineKind.GAP -> 2
+            TimelineKind.END -> 3
+        }
 
     private fun formatTime(
         timestampMs: Long,
         zone: ZoneId,
     ): String {
-        val time =
-            java.time.Instant
-                .ofEpochMilli(timestampMs)
-                .atZone(zone)
-                .toLocalTime()
+        val time = Instant.ofEpochMilli(timestampMs).atZone(zone).toLocalTime()
         return "%02d:%02d".format(time.hour, time.minute)
     }
 
@@ -187,7 +222,12 @@ class DayDetailViewModel(
         return if (km >= 10) "%.0f".format(km) else "%.1f".format(km)
     }
 
-    /** 供预览与测试。 */
-    internal fun previewDateTime(dateKey: String): LocalDateTime? =
-        runCatching { LocalDate.parse(dateKey).atStartOfDay() }.getOrNull()
+    /** 供测试：把毫秒时间戳格式化成 `HH:mm`。 */
+    internal fun previewTime(
+        timestampMs: Long,
+        zone: ZoneId = ZoneId.systemDefault(),
+    ): String = formatTime(timestampMs, zone)
+
+    /** 供测试：日期键转显示标题。 */
+    internal fun previewTitle(dateKey: String): String = formatTitle(dateKey)
 }

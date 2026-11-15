@@ -23,14 +23,19 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -38,17 +43,19 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.amap.api.maps.AMap
 import com.hmilyld.daytrail.AppContainer
 import com.hmilyld.daytrail.R
 import com.hmilyld.daytrail.ui.appViewModelFactory
 import com.hmilyld.daytrail.ui.components.EmptyState
 import com.hmilyld.daytrail.ui.components.map.AmapView
 import com.hmilyld.daytrail.ui.components.map.MapUnavailablePlaceholder
+import com.hmilyld.daytrail.ui.components.map.TrackOverlay
 import com.hmilyld.daytrail.ui.components.map.rememberAmapAvailable
 import com.hmilyld.daytrail.ui.theme.DayTrailTheme
 
 /**
- * 单日详情：上方固定高度地图折线，下方时间轴。
+ * 单日详情：上方地图轨迹，下方时间轴。
  *
  * 时间轴有四类节点：出发 / 停留 / 数据缺失 / 结束。
  * 「数据缺失」必须显式画出——高铁过隧道会频繁出现，
@@ -82,6 +89,10 @@ private fun DayDetailContent(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val mapAvailable = rememberAmapAvailable()
+    var amap by remember { mutableStateOf<AMap?>(null) }
+    val polylineColor = MaterialTheme.colorScheme.primary.toArgb()
+
     Scaffold(
         modifier = modifier.fillMaxSize(),
         topBar = {
@@ -92,7 +103,7 @@ private fun DayDetailContent(
                             text = state.title.ifBlank { state.dateKey },
                             style = MaterialTheme.typography.titleLarge,
                         )
-                        if (state.distanceKm != "0.0") {
+                        if (state.hasTrack) {
                             Text(
                                 text =
                                     "${state.distanceKm} km · ${state.duration} · " +
@@ -124,20 +135,34 @@ private fun DayDetailContent(
                     .fillMaxSize()
                     .padding(innerPadding),
         ) {
-            if (rememberAmapAvailable()) {
-                AmapView(
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .height(220.dp),
-                )
-            } else {
-                MapUnavailablePlaceholder(
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .height(220.dp),
-                )
+            Box(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .height(MAP_HEIGHT),
+            ) {
+                if (mapAvailable) {
+                    AmapView(
+                        modifier = Modifier.fillMaxSize(),
+                        onMapCreated = { map -> amap = map },
+                    )
+                    TrackOverlay(
+                        amap = amap,
+                        points = state.trackPoints,
+                        stays = state.stayMarkers,
+                        polylineColor = polylineColor,
+                    )
+                    // 文字版行程：地图对读屏不可用，必须提供等价信息
+                    MapAccessibilitySummary(
+                        text = state.accessibilitySummary,
+                        modifier =
+                            Modifier
+                                .align(Alignment.BottomStart)
+                                .padding(12.dp),
+                    )
+                } else {
+                    MapUnavailablePlaceholder(modifier = Modifier.fillMaxSize())
+                }
             }
 
             if (state.entries.isEmpty() && !state.loading) {
@@ -155,6 +180,36 @@ private fun DayDetailContent(
                 }
             }
         }
+    }
+}
+
+/**
+ * 地图的文字版行程。
+ *
+ * 折线本身对 TalkBack 完全不可用，这里给出「起点 → 终点 + 里程」的等价描述。
+ * 用 `clearAndSetSemantics` 合并成一句，避免读屏念一堆坐标。
+ */
+@Composable
+private fun MapAccessibilitySummary(
+    text: String,
+    modifier: Modifier = Modifier,
+) {
+    if (text.isBlank()) return
+
+    Surface(
+        color = MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.88f),
+        contentColor = MaterialTheme.colorScheme.inverseOnSurface,
+        shape = MaterialTheme.shapes.small,
+        modifier =
+            modifier.clearAndSetSemantics {
+                contentDescription = text
+            },
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+        )
     }
 }
 
@@ -223,6 +278,9 @@ private fun TimelineRow(entry: TimelineEntry) {
         }
     }
 }
+
+/** 地图区域高度。固定值保证时间轴有足够空间，避免地图吃掉整屏。 */
+private val MAP_HEIGHT = 260.dp
 
 @Preview(showBackground = true, name = "单日详情")
 @Composable
