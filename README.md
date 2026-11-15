@@ -36,9 +36,11 @@ Release keystore：`app/keystore/release.jks`（别名 `daytrail`，4096 位 RSA
 | 用途 | SHA1 |
 |---|---|
 | Release | `<YOUR_RELEASE_SHA1>` |
-| Debug | `<REDACTED>:A8:2C:97:3F:AA:40:C9:DA:EE:F4:DB:EA:DD:C8:60:9C` |
+| Debug | `<YOUR_DEBUG_SHA1>` |
 
 Release SHA256：`<YOUR_RELEASE_SHA256>`
+
+Debug keystore 固定为 `app/keystore/debug.jks`（密码 `android`），**随仓库提交**，保证任何机器上 debug SHA1 一致，不用重复申请 Key。Release keystore 不进 Git。
 
 ## 高德 Key
 
