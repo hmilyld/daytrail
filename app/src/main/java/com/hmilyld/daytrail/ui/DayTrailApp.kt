@@ -1,5 +1,13 @@
 package com.hmilyld.daytrail.ui
 
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
@@ -139,6 +147,36 @@ private fun NavHost(
     NavDisplay(
         backStack = backStack,
         onBack = { backStack.removeLastOrNull() },
+        // 转场策略：
+        // - 顶层 Tab 之间切换用无动画（Material 规范：底部导航切换不滑动、不淡入）
+        // - 进入详情页用水平滑入，返回用水平滑出，符合层级关系的空间连续性
+        // 顶层 Tab 之间如果保留淡入淡出，地图页退出时即使有 TextureView 也仍有残影，
+        // 而且底部导航切换加动画本身就是反模式。
+        transitionSpec = {
+            if (isTopLevelSwitch(backStack)) {
+                EnterTransition.None togetherWith ExitTransition.None
+            } else {
+                slideInHorizontally(
+                    animationSpec = tween(TRANSITION_DURATION_MS),
+                    initialOffsetX = { fullWidth -> fullWidth / 4 },
+                ) togetherWith
+                    fadeOut(animationSpec = tween(TRANSITION_DURATION_MS))
+            }
+        },
+        popTransitionSpec = {
+            fadeIn(animationSpec = tween(TRANSITION_DURATION_MS)) togetherWith
+                slideOutHorizontally(
+                    animationSpec = tween(TRANSITION_DURATION_MS),
+                    targetOffsetX = { fullWidth -> fullWidth / 4 },
+                )
+        },
+        predictivePopTransitionSpec = {
+            fadeIn(animationSpec = tween(TRANSITION_DURATION_MS)) togetherWith
+                slideOutHorizontally(
+                    animationSpec = tween(TRANSITION_DURATION_MS),
+                    targetOffsetX = { fullWidth -> fullWidth / 4 },
+                )
+        },
         entryProvider =
             entryProvider {
                 entry<Destination.Today> {
@@ -174,6 +212,17 @@ private fun NavHost(
             },
     )
 }
+
+/** 详情页转场时长。200ms 是 Material 推荐的短距离转场上限。 */
+private const val TRANSITION_DURATION_MS = 200
+
+/**
+ * 判断本次转场是否为顶层 Tab 之间的切换。
+ *
+ * 顶层 Tab 的切换由 [navigateTopLevel] 完成，它保证栈长度始终为 1。
+ * 进入详情页时栈长度为 2，因此用目标栈长度即可区分。
+ */
+private fun isTopLevelSwitch(backStack: NavBackStack<NavKey>): Boolean = backStack.size <= 1
 
 /**
  * 切换顶层目的地：原地替换栈底，不堆叠返回栈。

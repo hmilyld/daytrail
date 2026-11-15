@@ -11,17 +11,22 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.amap.api.maps.AMap
-import com.amap.api.maps.MapView
+import com.amap.api.maps.TextureMapView
 
 /**
- * 高德 MapView 的 Compose 封装。
+ * 高德地图的 Compose 封装。
  *
- * MapView 是 View 而不是 Composable，直接放进 AndroidView 会漏掉生命周期：
- * 必须在宿主 Activity 的 onResume / onPause / onDestroy 上转发，
- * 否则地图会持续持有传感器与渲染资源，造成内存泄漏和耗电。
+ * 为什么用 TextureMapView 而不是 MapView：
+ * MapView 内部是 SurfaceView，绘制在独立的 Surface 层上，不参与 View 层级的
+ * alpha / transform 动画。页面切换时 Compose 做的淡出动画对 SurfaceView 无效，
+ * 地图会「粘」在屏幕上直到整个页面被移除，看起来像卡住。
+ * TextureMapView 基于 TextureView，跟随正常 View 层级绘制，能正确参与过渡动画。
  *
- * 这里用 LocalLifecycleOwner 桥接，比在 Activity 里手动转发更可靠，
- * 也让地图可以安全地放在任意页面里。
+ * 代价是 TextureView 比 SurfaceView 多一次 GPU 纹理拷贝，但在本应用的地图
+ * 负载下差异可忽略，视觉正确性更重要。
+ *
+ * 生命周期：MapView 系必须转发 onResume / onPause / onDestroy，
+ * 否则会持续持有传感器与渲染资源。这里用 LocalLifecycleOwner 桥接。
  */
 @Composable
 fun AmapView(
@@ -32,12 +37,11 @@ fun AmapView(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    // MapView 的创建成本高，必须只创建一次，不能随重组重建
+    // 地图实例创建成本高，只创建一次，不能随重组重建
     val mapView =
         remember {
-            MapView(context).apply {
+            TextureMapView(context).apply {
                 onCreate(Bundle())
-                // 关闭地图内置的手势缩放按钮与缩放控件，交给外层 UI 控制
                 map.uiSettings.isZoomControlsEnabled = false
                 map.uiSettings.isScaleControlsEnabled = false
                 map.uiSettings.isCompassEnabled = true
