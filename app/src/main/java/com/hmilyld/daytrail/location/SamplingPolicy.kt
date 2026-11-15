@@ -69,6 +69,8 @@ data class MovementSample(
  * - 状态迁移有滞回，避免等红灯时在 Still/Walking 之间反复横跳
  * - 速度未知时（部分设备不返回）用位移/时间推算
  * - 进入 Sleeping 后不再主动采样，由传感器或兜底闹钟唤醒
+ * - **只要在移动就必须用 GPS**：基站定位精度约 100–500 米，
+ *   用它画轨迹会得到一条锯齿状的粗线，完全没有参考价值
  */
 class SamplingPolicy(
     private val preset: SamplingPreset,
@@ -87,6 +89,19 @@ class SamplingPolicy(
     private var consecutiveStill = 0
     private var consecutiveMoving = 0
     private var stillSinceMs: Long? = null
+
+    /**
+     * 该状态是否需要 GPS。
+     *
+     * 只有静止时才允许用粗定位：此时轨迹几乎不变化，
+     * 精度差一点无所谓，而省下的电很可观。
+     * 一旦在移动，必须走高精度 GPS，否则轨迹不可用。
+     */
+    fun requiresHighAccuracy(state: MovementState): Boolean =
+        when (state) {
+            MovementState.STILL, MovementState.SLEEPING -> false
+            MovementState.WALKING, MovementState.DRIVING -> true
+        }
 
     /**
      * 根据最新采样更新状态。

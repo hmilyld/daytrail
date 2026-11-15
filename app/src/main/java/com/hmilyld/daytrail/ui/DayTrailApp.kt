@@ -36,6 +36,7 @@ import com.hmilyld.daytrail.ui.nav.TopLevelDestination
 import com.hmilyld.daytrail.ui.screens.daydetail.DayDetailScreen
 import com.hmilyld.daytrail.ui.screens.history.HistoryScreen
 import com.hmilyld.daytrail.ui.screens.onboarding.OnboardingScreen
+import com.hmilyld.daytrail.ui.screens.permission.PermissionScreen
 import com.hmilyld.daytrail.ui.screens.settings.SettingsScreen
 import com.hmilyld.daytrail.ui.screens.today.TodayScreen
 import com.hmilyld.daytrail.ui.screens.trip.TripDetailScreen
@@ -192,7 +193,15 @@ private fun NavHost(
                     )
                 }
                 entry<Destination.Settings> {
-                    SettingsScreen(container = container)
+                    SettingsScreen(
+                        container = container,
+                        onOpenPermissions = {
+                            backStack.add(Destination.Permissions)
+                        },
+                    )
+                }
+                entry<Destination.Permissions> {
+                    PermissionScreen(onBack = { backStack.removeLastOrNull() })
                 }
                 entry<Destination.DayDetail> { key ->
                     DayDetailScreen(

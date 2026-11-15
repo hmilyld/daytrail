@@ -1,32 +1,34 @@
 package com.hmilyld.daytrail.ui.components.map
 
-import android.os.Bundle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.amap.api.maps.AMap
-import com.amap.api.maps.TextureMapView
 
 /**
  * 高德地图的 Compose 封装。
  *
- * 为什么用 TextureMapView 而不是 MapView：
- * MapView 内部是 SurfaceView，绘制在独立的 Surface 层上，不参与 View 层级的
- * alpha / transform 动画。页面切换时 Compose 做的淡出动画对 SurfaceView 无效，
- * 地图会「粘」在屏幕上直到整个页面被移除，看起来像卡住。
- * TextureMapView 基于 TextureView，跟随正常 View 层级绘制，能正确参与过渡动画。
+ * 两个关键设计：
  *
- * 代价是 TextureView 比 SurfaceView 多一次 GPU 纹理拷贝，但在本应用的地图
- * 负载下差异可忽略，视觉正确性更重要。
+ * 1. **用 TextureMapView 而不是 MapView**
+ *    MapView 内部是 SurfaceView，绘制在独立 Surface 层，不参与 View 层级的
+ *    alpha / transform 动画。页面切换时 Compose 的淡出对 SurfaceView 无效，
+ *    地图会「粘」在屏幕上直到整页被移除。TextureMapView 基于 TextureView，
+ *    跟随正常 View 层级绘制。
  *
- * 生命周期：MapView 系必须转发 onResume / onPause / onDestroy，
- * 否则会持续持有传感器与渲染资源。这里用 LocalLifecycleOwner 桥接。
+ * 2. **实例跨页面复用，不在 onDispose 里销毁**
+ *    地图创建成本高（GL 上下文、渲染管线、首批瓦片）。如果每次切 Tab 都重建，
+ *    会看到明显白屏与瓦片重新下载。这里只转发 resume/pause，
+ *    真正的销毁交给 [MapViewCache.destroy]，只在应用退出时发生。
+ *
+ * 代价：地图会常驻一份内存（约 30–60MB）。对轨迹类应用是值得的取舍——
+ * 用户在地图和列表之间来回切换是高频操作。
  */
 @Composable
 fun AmapView(
@@ -38,28 +40,22 @@ fun AmapView(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    // 地图实例创建成本高，只创建一次，不能随重组重建
-    val mapView =
-        remember {
-            TextureMapView(context).apply {
-                onCreate(Bundle())
-                map.uiSettings.isZoomControlsEnabled = false
-                map.uiSettings.isScaleControlsEnabled = false
-                map.uiSettings.isCompassEnabled = true
-                map.uiSettings.isMyLocationButtonEnabled = false
-            }
-        }
+    // 从缓存取实例：已存在则复用，不重建
+    val mapView = remember { MapViewCache.obtain(context) }
 
     DisposableEffect(mapView, lifecycleOwner) {
         val observer =
             LifecycleEventObserver { _, event ->
                 when (event) {
-                    Lifecycle.Event.ON_RESUME -> mapView.onResume()
-                    Lifecycle.Event.ON_PAUSE -> mapView.onPause()
+                    Lifecycle.Event.ON_RESUME -> MapViewCache.resume()
+                    Lifecycle.Event.ON_PAUSE -> MapViewCache.pause()
                     else -> Unit
                 }
             }
         lifecycleOwner.lifecycle.addObserver(observer)
+
+        // 进入页面时确保处于 resume 状态
+        MapViewCache.resume()
 
         onMapReady(mapView.map)
         onMapCreated(mapView.map)
@@ -67,7 +63,8 @@ fun AmapView(
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
             onMapReleased()
-            mapView.onDestroy()
+            // 只暂停，不销毁：实例留给下次复用
+            MapViewCache.pause()
         }
     }
 

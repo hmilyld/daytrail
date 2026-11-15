@@ -23,6 +23,18 @@ enum class SamplingTier {
 }
 
 /**
+ * 主题模式。
+ *
+ * 默认跟随系统。用户可在设置页强制浅色或深色——
+ * 地图类应用在户外强光下，强制浅色往往比跟随系统更易读。
+ */
+enum class ThemeMode {
+    SYSTEM,
+    LIGHT,
+    DARK,
+}
+
+/**
  * 一次记录会话的状态。
  *
  * 注意：这个状态**不持久化**。它是进程内的运行状态，由 RecordingService 持有。
@@ -58,6 +70,12 @@ class SettingsStore(
     val onboardingCompleted: Flow<Boolean> =
         context.dataStore.data.map { prefs -> prefs[KEY_ONBOARDING_COMPLETED] ?: false }
 
+    val themeMode: Flow<ThemeMode> =
+        context.dataStore.data.map { prefs ->
+            val ordinal = prefs[KEY_THEME_MODE] ?: ThemeMode.SYSTEM.ordinal
+            ThemeMode.entries.getOrElse(ordinal) { ThemeMode.SYSTEM }
+        }
+
     suspend fun setSamplingTier(tier: SamplingTier) {
         context.dataStore.edit { prefs -> prefs[KEY_SAMPLING_TIER] = tier.ordinal }
     }
@@ -70,9 +88,14 @@ class SettingsStore(
         context.dataStore.edit { prefs -> prefs[KEY_ONBOARDING_COMPLETED] = completed }
     }
 
+    suspend fun setThemeMode(mode: ThemeMode) {
+        context.dataStore.edit { prefs -> prefs[KEY_THEME_MODE] = mode.ordinal }
+    }
+
     private companion object {
         val KEY_SAMPLING_TIER = intPreferencesKey("sampling_tier")
         val KEY_LEARNING_ENABLED = booleanPreferencesKey("learning_enabled")
         val KEY_ONBOARDING_COMPLETED = booleanPreferencesKey("onboarding_completed")
+        val KEY_THEME_MODE = intPreferencesKey("theme_mode")
     }
 }

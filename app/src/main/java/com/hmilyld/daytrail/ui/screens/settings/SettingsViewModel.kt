@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hmilyld.daytrail.data.prefs.SamplingTier
 import com.hmilyld.daytrail.data.prefs.SettingsStore
+import com.hmilyld.daytrail.data.prefs.ThemeMode
 import com.hmilyld.daytrail.data.repo.TrackRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -16,6 +17,7 @@ import kotlinx.coroutines.launch
 data class SettingsUiState(
     val samplingTier: SamplingTier = SamplingTier.POWER_SAVER,
     val learningEnabled: Boolean = true,
+    val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val pointCount: Int = 0,
 )
 
@@ -35,11 +37,13 @@ class SettingsViewModel(
         combine(
             settingsStore.samplingTier,
             settingsStore.learningEnabled,
+            settingsStore.themeMode,
             pointCount,
-        ) { tier, learning, points ->
+        ) { tier, learning, theme, points ->
             SettingsUiState(
                 samplingTier = tier,
                 learningEnabled = learning,
+                themeMode = theme,
                 pointCount = points,
             )
         }.stateIn(
@@ -58,6 +62,10 @@ class SettingsViewModel(
 
     fun setLearningEnabled(enabled: Boolean) {
         viewModelScope.launch { settingsStore.setLearningEnabled(enabled) }
+    }
+
+    fun setThemeMode(mode: ThemeMode) {
+        viewModelScope.launch { settingsStore.setThemeMode(mode) }
     }
 
     /** 清除全部数据。调用方必须先做二次确认。 */

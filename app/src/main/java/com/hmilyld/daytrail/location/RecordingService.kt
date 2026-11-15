@@ -178,7 +178,10 @@ class RecordingService : Service() {
 
             sleepController?.wake()
 
-            val fix = requestFixWithFallback(highAccuracy = currentState == MovementState.DRIVING)
+            val fix =
+                requestFixWithFallback(
+                    highAccuracy = samplingPolicy.requiresHighAccuracy(currentState),
+                )
             if (fix != null && fix.errorCode == 0) {
                 val previousSample =
                     lastFix?.let { MovementSample(it.point, it.timestampMs, it.speedMps) }

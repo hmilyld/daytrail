@@ -48,8 +48,10 @@ import com.hmilyld.daytrail.location.RecordingService
 import com.hmilyld.daytrail.ui.appViewModelFactory
 import com.hmilyld.daytrail.ui.components.StatBlock
 import com.hmilyld.daytrail.ui.components.map.AmapView
+import com.hmilyld.daytrail.ui.components.map.LocateButton
 import com.hmilyld.daytrail.ui.components.map.MapUnavailablePlaceholder
 import com.hmilyld.daytrail.ui.components.map.TrackOverlay
+import com.hmilyld.daytrail.ui.components.map.enableMyLocationDot
 import com.hmilyld.daytrail.ui.components.map.rememberAmapAvailable
 import com.hmilyld.daytrail.ui.theme.DayTrailTheme
 
@@ -96,7 +98,11 @@ private fun TodayContent(
         if (mapAvailable) {
             AmapView(
                 modifier = Modifier.fillMaxSize(),
-                onMapCreated = { map -> amap = map },
+                onMapCreated = { map ->
+                    amap = map
+                    // 打开定位蓝点：让用户看到自己在哪
+                    map.enableMyLocationDot()
+                },
             )
             TrackOverlay(
                 amap = amap,
@@ -116,6 +122,17 @@ private fun TodayContent(
                     .align(Alignment.TopStart)
                     .padding(12.dp),
         )
+
+        // 定位按钮：地图右上角，与状态胶囊同一行
+        if (mapAvailable) {
+            LocateButton(
+                amap = amap,
+                modifier =
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(12.dp),
+            )
+        }
 
         StatsSheet(
             state = state,

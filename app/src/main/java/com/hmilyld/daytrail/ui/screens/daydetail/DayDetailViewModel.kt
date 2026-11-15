@@ -3,6 +3,7 @@ package com.hmilyld.daytrail.ui.screens.daydetail
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hmilyld.daytrail.core.DayKeys
+import com.hmilyld.daytrail.core.DistanceFormat
 import com.hmilyld.daytrail.core.GeoPoint
 import com.hmilyld.daytrail.core.formatDuration
 import com.hmilyld.daytrail.data.db.entity.DayGapEntity
@@ -217,10 +218,8 @@ class DayDetailViewModel(
         return "${date.monthValue}月${date.dayOfMonth}日 ${weekdays[date.dayOfWeek.value - 1]}"
     }
 
-    private fun formatKm(meters: Double): String {
-        val km = meters / 1000.0
-        return if (km >= 10) "%.0f".format(km) else "%.1f".format(km)
-    }
+    /** 里程格式化。统一走 [DistanceFormat]。 */
+    private fun formatKm(meters: Double): String = DistanceFormat.kilometers(meters)
 
     /** 供测试：把毫秒时间戳格式化成 `HH:mm`。 */
     internal fun previewTime(

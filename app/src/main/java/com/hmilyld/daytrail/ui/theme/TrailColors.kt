@@ -17,6 +17,14 @@ internal object TrailColors {
     val Green90 = Color(0xFFD6F5E0)
     val Green10 = Color(0xFF00300F)
 
+    /**
+     * 深色主题下的「成功」容器色。
+     *
+     * 不能直接用 Green10（#00300F）：它在深色背景上几乎与背景同色，
+     * 卡片会变成一团黑。用低饱和的深绿保证可辨识，同时不刺眼。
+     */
+    val GreenContainerDark = Color(0xFF0C3A1F)
+
     val Amber40 = Color(0xFFF59E0B)
     val Amber90 = Color(0xFFFDEFCF)
     val Amber10 = Color(0xFF3D2A00)
@@ -24,6 +32,9 @@ internal object TrailColors {
     val Red40 = Color(0xFFDC2626)
     val Red90 = Color(0xFFFBDDDD)
     val Red10 = Color(0xFF410002)
+
+    /** 深色主题下的错误容器色，理由同 [GreenContainerDark]。 */
+    val RedContainerDark = Color(0xFF4A1414)
 
     // 中性色（浅色）
     val SurfaceLight = Color(0xFFF5F7FA)

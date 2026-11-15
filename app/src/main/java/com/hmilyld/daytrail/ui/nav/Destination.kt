@@ -37,6 +37,10 @@ sealed interface Destination : NavKey {
     /** 首启引导 */
     @Serializable
     data object Onboarding : Destination
+
+    /** 权限自检。随时可进入，用于排查记录异常。 */
+    @Serializable
+    data object Permissions : Destination
 }
 
 /** 顶层导航项：决定底部导航栏 / 导航栏的条目。 */

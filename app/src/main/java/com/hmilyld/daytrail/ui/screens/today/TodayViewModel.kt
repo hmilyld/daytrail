@@ -3,6 +3,7 @@ package com.hmilyld.daytrail.ui.screens.today
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hmilyld.daytrail.core.DayKey
+import com.hmilyld.daytrail.core.DistanceFormat
 import com.hmilyld.daytrail.core.GeoPoint
 import com.hmilyld.daytrail.core.formatDuration
 import com.hmilyld.daytrail.data.prefs.RecordingState
@@ -80,10 +81,7 @@ class TodayViewModel(
         )
 
     companion object {
-        /** 里程格式化：10 公里以内保留一位小数，以上取整。 */
-        fun formatKm(meters: Double): String {
-            val km = meters / 1000.0
-            return if (km >= 10) "%.0f".format(km) else "%.1f".format(km)
-        }
+        /** 里程格式化。统一走 [DistanceFormat]，避免三处显示不一致。 */
+        fun formatKm(meters: Double): String = DistanceFormat.kilometers(meters)
     }
 }

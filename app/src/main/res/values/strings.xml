@@ -5,7 +5,7 @@
     <!-- 底部导航 / 导航栏 -->
     <string name="nav_today">今日</string>
     <string name="nav_history">历史</string>
-    <string name="nav_settings">我的</string>
+    <string name="nav_settings">设置</string>
 
     <!-- 通用 -->
     <string name="action_back">返回</string>
@@ -41,33 +41,78 @@
     <string name="trip_title">行程</string>
 
     <!-- 设置 -->
-    <string name="settings_title">我的</string>
+    <string name="settings_title">设置</string>
+    <string name="settings_section_appearance">外观</string>
     <string name="settings_section_recording">记录</string>
     <string name="settings_section_data">数据</string>
     <string name="settings_section_permission">权限</string>
     <string name="settings_section_about">关于</string>
+    <string name="settings_theme_system">跟随系统</string>
+    <string name="settings_theme_light">浅色</string>
+    <string name="settings_theme_dark">深色</string>
     <string name="settings_sampling_tier">采样档位</string>
     <string name="settings_sampling_tier_desc">省电优先：静止 10 分 / 步行 3 分 / 驾车 1 分</string>
+    <string name="settings_tier_power_saver">省电优先 · 静止 10 分 / 步行 3 分 / 驾车 1 分</string>
+    <string name="settings_tier_balanced">平衡 · 静止 5 分 / 步行 90 秒 / 驾车 45 秒</string>
+    <string name="settings_tier_high_accuracy">高精度 · 静止 2 分 / 步行 30 秒 / 驾车 15 秒</string>
     <string name="settings_learning">自我学习</string>
     <string name="settings_learning_desc">学会你的作息与常去地点，进一步省电</string>
+    <string name="settings_permission_location">位置权限</string>
+    <string name="settings_permission_location_desc">查看并修改「始终允许」与精确定位</string>
+    <string name="settings_permission_notification">通知权限</string>
+    <string name="settings_permission_notification_desc">记录时在通知栏显示状态</string>
+    <string name="settings_permission_battery">电池优化</string>
+    <string name="settings_permission_battery_desc">加入白名单，避免后台被杀</string>
     <string name="settings_export">导出数据</string>
     <string name="settings_export_desc">GeoJSON 与 GPX，可导进其他地图</string>
     <string name="settings_storage">数据占用</string>
     <string name="settings_version">版本</string>
 
+    <!-- 地图 -->
+    <string name="map_locate_current">回到当前位置</string>
+
+    <!-- 权限自检 -->
+    <string name="permission_title">权限自检</string>
+    <string name="permission_intro">记录轨迹依赖下面每一项。任何一项异常都会导致采不到点或通知不显示，点右侧按钮可直接去修复。</string>
+    <string name="permission_location_title">精确位置权限</string>
+    <string name="permission_location_detail">未授予时定位会直接失败，轨迹完全无法记录。</string>
+    <string name="permission_switch_title">系统定位开关</string>
+    <string name="permission_switch_detail">权限给了但开关关掉，仍然取不到坐标。这是最常见的原因。</string>
+    <string name="permission_background_title">始终允许位置</string>
+    <string name="permission_background_detail">仅在「使用应用时允许」时，息屏后系统会停止定位。</string>
+    <string name="permission_notification_title">通知权限</string>
+    <string name="permission_notification_detail">未授予时前台服务的通知会被系统静默丢弃。</string>
+    <string name="permission_battery_title">电池优化白名单</string>
+    <string name="permission_battery_detail">未加入时系统可能在后台冻结记录服务。</string>
+    <string name="permission_action_open">去开启</string>
+    <string name="permission_action_turn_on">去打开</string>
+    <string name="permission_action_add">加入白名单</string>
+    <string name="permission_tips_title">小米 / HyperOS 额外设置</string>
+    <string name="permission_tips_body">除上述权限外，还需在「应用信息 → 自启动」中允许自启动，并把「省电策略」设为「无限制」。这两项不做，息屏几分钟后服务就会被冻结，轨迹会大段缺失。</string>
+    <string name="permission_all_ok">权限全部就绪</string>
+    <string name="permission_has_issue">有权限未就绪，可能影响记录</string>
+    <string name="permission_check">检查</string>
+
     <!-- 引导 -->
     <string name="onboarding_title">开始之前</string>
+    <string name="onboarding_subtitle">行迹需要在后台持续记录位置。下面四项缺一不可，请逐项授权。</string>
     <string name="onboarding_location_title">位置权限</string>
-    <string name="onboarding_location_body">需要「精确位置」才能记录轨迹。</string>
+    <string name="onboarding_location_body">需要「精确位置」才能记录轨迹。选择「使用应用时允许」并勾选「精确」。</string>
     <string name="onboarding_background_title">始终允许位置</string>
-    <string name="onboarding_background_body">选择「始终允许」，否则息屏后无法继续记录。</string>
+    <string name="onboarding_background_body">在系统设置里把位置权限改为「始终允许」，否则息屏后无法继续记录。</string>
     <string name="onboarding_notification_title">通知权限</string>
-    <string name="onboarding_notification_body">记录时会在通知栏常驻一条状态，方便随时暂停。</string>
+    <string name="onboarding_notification_body">记录时会在通知栏常驻一条状态，方便随时暂停或结束。</string>
     <string name="onboarding_battery_title">电池优化白名单</string>
     <string name="onboarding_battery_body">加入白名单后，系统不会在后台杀掉记录服务。</string>
-    <string name="onboarding_action_grant">去设置</string>
+    <string name="onboarding_action_grant">授权</string>
+    <string name="onboarding_action_open_settings">去设置</string>
+    <string name="onboarding_action_open_notification_settings">通知设置</string>
     <string name="onboarding_action_done">已完成</string>
     <string name="onboarding_action_finish">开始使用</string>
+    <string name="onboarding_action_skip">稍后再说</string>
+    <string name="onboarding_granted">已授权</string>
+    <string name="onboarding_location_service_off">系统定位开关是关闭的。仅授予权限还不够，必须打开「位置信息」才能取到坐标。</string>
+    <string name="onboarding_location_required_hint">位置权限未授予，开始后无法记录任何轨迹。</string>
 
     <!-- 无障碍 -->
     <string name="cd_map">轨迹地图</string>
