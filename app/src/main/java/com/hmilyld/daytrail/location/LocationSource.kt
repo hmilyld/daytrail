@@ -44,3 +44,17 @@ interface LocationSource {
     /** 释放资源。 */
     fun release()
 }
+
+/**
+ * 把定位结果统一转成 GCJ-02。
+ *
+ * 地图底图是 GCJ-02，而系统定位返回 WGS-84。
+ * 任何要在地图上绘制的坐标都必须先过这一步，否则偏移 50–550 米。
+ */
+fun LocationFix.toGcj02(): GeoPoint =
+    if (coordinateSystem == CoordinateSystem.WGS84) {
+        com.hmilyld.daytrail.core.CoordinateTransform
+            .wgs84ToGcj02(point)
+    } else {
+        point
+    }

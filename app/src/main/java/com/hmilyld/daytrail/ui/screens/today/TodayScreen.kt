@@ -48,10 +48,10 @@ import com.hmilyld.daytrail.location.RecordingService
 import com.hmilyld.daytrail.ui.appViewModelFactory
 import com.hmilyld.daytrail.ui.components.StatBlock
 import com.hmilyld.daytrail.ui.components.map.AmapView
+import com.hmilyld.daytrail.ui.components.map.CurrentLocationMarker
 import com.hmilyld.daytrail.ui.components.map.LocateButton
 import com.hmilyld.daytrail.ui.components.map.MapUnavailablePlaceholder
 import com.hmilyld.daytrail.ui.components.map.TrackOverlay
-import com.hmilyld.daytrail.ui.components.map.enableMyLocationDot
 import com.hmilyld.daytrail.ui.components.map.rememberAmapAvailable
 import com.hmilyld.daytrail.ui.theme.DayTrailTheme
 
@@ -98,12 +98,11 @@ private fun TodayContent(
         if (mapAvailable) {
             AmapView(
                 modifier = Modifier.fillMaxSize(),
-                onMapCreated = { map ->
-                    amap = map
-                    // 打开定位蓝点：让用户看到自己在哪
-                    map.enableMyLocationDot()
-                },
+                onMapCreated = { map -> amap = map },
             )
+            // 当前位置标记：自己画，不依赖高德定位 SDK 的蓝点。
+            // 始终跟随：用户打开应用就想知道自己在哪，与是否在记录无关。
+            CurrentLocationMarker(amap = amap)
             TrackOverlay(
                 amap = amap,
                 points = state.trackPoints,
