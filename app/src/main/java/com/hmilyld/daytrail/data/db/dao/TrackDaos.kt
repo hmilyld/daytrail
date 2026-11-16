@@ -126,6 +126,10 @@ interface DayGapDao {
     @Query("SELECT * FROM day_gap WHERE day_key = :dayKey ORDER BY start_ts ASC")
     suspend fun ofDay(dayKey: String): List<DayGapEntity>
 
+    /** 观察某天的断点，详情页实时刷新用。 */
+    @Query("SELECT * FROM day_gap WHERE day_key = :dayKey ORDER BY start_ts ASC")
+    fun observeOfDay(dayKey: String): Flow<List<DayGapEntity>>
+
     @Query("DELETE FROM day_gap WHERE day_key = :dayKey")
     suspend fun deleteDay(dayKey: String)
 

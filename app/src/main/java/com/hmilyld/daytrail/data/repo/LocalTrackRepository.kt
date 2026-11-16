@@ -110,6 +110,9 @@ class LocalTrackRepository(
 
     override suspend fun gapsOfDay(dayKey: DayKey): List<DayGapEntity> = gapDao.ofDay(dayKey.value)
 
+    override fun observeGaps(dayKey: DayKey): Flow<List<DayGapEntity>> =
+        gapDao.observeOfDay(dayKey.value)
+
     override fun observeRange(
         from: DayKey,
         to: DayKey,

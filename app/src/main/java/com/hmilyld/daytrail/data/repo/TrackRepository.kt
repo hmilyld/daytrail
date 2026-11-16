@@ -49,6 +49,9 @@ interface TrackRepository {
     /** 某天的断点。 */
     suspend fun gapsOfDay(dayKey: DayKey): List<DayGapEntity>
 
+    /** 某天的断点，可观察。详情页实时刷新用。 */
+    fun observeGaps(dayKey: DayKey): Flow<List<DayGapEntity>>
+
     /** 日期区间内的汇总，月历用。 */
     fun observeRange(
         from: DayKey,

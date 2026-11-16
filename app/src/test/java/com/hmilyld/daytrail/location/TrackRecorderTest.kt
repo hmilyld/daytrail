@@ -43,6 +43,8 @@ private class FakeTrackRepository : TrackRepository {
 
     override suspend fun gapsOfDay(dayKey: DayKey): List<DayGapEntity> = emptyList()
 
+    override fun observeGaps(dayKey: DayKey): Flow<List<DayGapEntity>> = flowOf(emptyList())
+
     override fun observeRange(
         from: DayKey,
         to: DayKey,

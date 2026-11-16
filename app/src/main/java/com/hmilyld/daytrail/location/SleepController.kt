@@ -25,7 +25,8 @@ import android.util.Log
  */
 class SleepController(
     private val context: Context,
-    private val fallbackIntervalMs: Long,
+    /** 兜底定位间隔。档位切换后由 Service 更新，下一次休眠即按新值计时。 */
+    var fallbackIntervalMs: Long,
     private val onWake: (WakeReason) -> Unit,
 ) {
     /** 唤醒原因。 */

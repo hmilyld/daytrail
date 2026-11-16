@@ -8,12 +8,14 @@ import com.hmilyld.daytrail.core.GeoPoint
 import com.hmilyld.daytrail.core.formatDuration
 import com.hmilyld.daytrail.data.db.entity.DayGapEntity
 import com.hmilyld.daytrail.data.db.entity.StaySegmentEntity
+import com.hmilyld.daytrail.data.db.entity.TrackDayEntity
 import com.hmilyld.daytrail.data.db.entity.TrackPointEntity
 import com.hmilyld.daytrail.data.repo.TrackRepository
 import com.hmilyld.daytrail.ui.components.map.MapStayMarker
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDate
@@ -73,7 +75,15 @@ class DayDetailViewModel(
 
     private var loadedKey: String? = null
 
-    /** 加载某天。重复调用同一天不会重复查询。 */
+    /**
+     * 加载某天。
+     *
+     * **所有数据都必须订阅**，不能只订阅汇总。
+     * 早期实现里 points / stays / gaps 是一次性读取，只有里程时长是订阅的：
+     * 用户刚开录就打开详情页，地图和时间轴会永久停在那一刻（显示 1 个点、
+     * 开始与结束同一分钟），而标题栏的数字却在继续增长——看起来像「记录断了」，
+     * 实际是页面成了快照。
+     */
     fun load(dateKey: String) {
         if (loadedKey == dateKey) return
         loadedKey = dateKey
@@ -82,27 +92,15 @@ class DayDetailViewModel(
             _uiState.value = DayDetailUiState(dateKey = dateKey, loading = true)
 
             val key = DayKeys.parse(dateKey) ?: return@launch
-            val day = repository.observeDay(key)
-            val points = repository.pointsOfDay(key)
-            val stays = repository.staysOfDay(key)
-            val gaps = repository.gapsOfDay(key)
 
-            _uiState.value = buildState(dateKey, points, stays, gaps)
-
-            // 汇总单独订阅：采集过程中里程会持续变化
-            day.collect { trackDay ->
-                _uiState.value =
-                    _uiState.value.copy(
-                        distanceKm = formatKm(trackDay?.distanceMeters ?: 0.0),
-                        duration =
-                            formatDuration(
-                                (
-                                    (trackDay?.movingMillis ?: 0L) +
-                                        (trackDay?.stoppedMillis ?: 0L)
-                                ) / 1000,
-                            ),
-                    )
-            }
+            combine(
+                repository.observePoints(key),
+                repository.observeStays(key),
+                repository.observeGaps(key),
+                repository.observeDay(key),
+            ) { points, stays, gaps, day ->
+                buildState(dateKey, points, stays, gaps, day)
+            }.collect { state -> _uiState.value = state }
         }
     }
 
@@ -111,6 +109,7 @@ class DayDetailViewModel(
         points: List<TrackPointEntity>,
         stays: List<StaySegmentEntity>,
         gaps: List<DayGapEntity>,
+        day: TrackDayEntity?,
     ): DayDetailUiState {
         val zone = ZoneId.systemDefault()
         val entries = mutableListOf<TimelineEntry>()
@@ -192,6 +191,11 @@ class DayDetailViewModel(
         return DayDetailUiState(
             dateKey = dateKey,
             title = formatTitle(dateKey),
+            distanceKm = formatKm(day?.distanceMeters ?: 0.0),
+            duration =
+                formatDuration(
+                    ((day?.movingMillis ?: 0L) + (day?.stoppedMillis ?: 0L)) / 1000,
+                ),
             stopCount = stays.size,
             entries = ordered,
             trackSegments = segments,

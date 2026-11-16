@@ -48,6 +48,7 @@ class RecordingService : Service() {
     private var sleepController: SleepController? = null
 
     private var loopJob: Job? = null
+    private var tierJob: Job? = null
     private var currentState = MovementState.WALKING
     private var lastFix: LocationFix? = null
 
@@ -105,6 +106,7 @@ class RecordingService : Service() {
 
     override fun onDestroy() {
         loopJob?.cancel()
+        tierJob?.cancel()
         sleepController?.release()
         systemSource.release()
         appContainer.recordingState.update(RecordingState.IDLE)
@@ -126,6 +128,12 @@ class RecordingService : Service() {
 
         loopJob =
             scope.launch {
+                // 档位必须在循环开始前读：早期实现写死了 POWER_SAVER，
+                // 用户在设置里选「高精度」完全没效果——界面显示 30 秒一个点，
+                // 实际还是 3 分钟，用户会以为定位不灵。
+                applyTier(appContainer.settingsStore.samplingTier.first())
+                observeTierChanges()
+
                 appContainer.recordingState.update(RecordingState.RECORDING)
                 recorder.restoreLastPoint()
                 recorder.startAutoFlush()
@@ -133,9 +141,34 @@ class RecordingService : Service() {
             }
     }
 
+    /**
+     * 应用采样档位。
+     *
+     * 只改 [SamplingPolicy] 的 preset，不重建对象：滞回状态要保留，
+     * 否则切档会让「静止多久后休眠」重新计时。
+     */
+    private fun applyTier(tier: SamplingTier) {
+        val next = SamplingPreset.valueOf(tier.name)
+        if (samplingPolicy.preset == next) return
+        Log.d(TAG, "采样档位切换为 $next")
+        samplingPolicy.preset = next
+        sleepController?.fallbackIntervalMs = next.profile.sleepFallbackMs
+    }
+
+    /** 录制过程中改档位也要生效，不必等下一次开始记录。 */
+    private fun observeTierChanges() {
+        tierJob?.cancel()
+        tierJob =
+            scope.launch {
+                appContainer.settingsStore.samplingTier.collect { applyTier(it) }
+            }
+    }
+
     private fun pauseRecording() {
         loopJob?.cancel()
         loopJob = null
+        tierJob?.cancel()
+        tierJob = null
         recorder.stopAutoFlush()
         sleepController?.wake()
         systemSource.release()
@@ -154,6 +187,8 @@ class RecordingService : Service() {
     private fun stopRecording() {
         loopJob?.cancel()
         loopJob = null
+        tierJob?.cancel()
+        tierJob = null
         recorder.stopAutoFlush()
         sleepController?.wake()
         scope.launch {

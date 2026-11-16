@@ -165,4 +165,25 @@ class SamplingPolicyTest {
 
         assertEquals(MovementState.STILL, afterReset)
     }
+
+    @Test
+    fun `changing preset takes effect without rebuilding the policy`() {
+        // 用户切到高精度后必须立刻按 30 秒采样。
+        // 早期实现里 Service 写死了 POWER_SAVER，设置页的档位完全不起作用。
+        assertEquals(
+            SamplingPreset.POWER_SAVER.profile.walkingIntervalMs,
+            policy.intervalFor(MovementState.WALKING),
+        )
+
+        policy.preset = SamplingPreset.HIGH_ACCURACY
+
+        assertEquals(
+            SamplingPreset.HIGH_ACCURACY.profile.walkingIntervalMs,
+            policy.intervalFor(MovementState.WALKING),
+        )
+        assertEquals(
+            SamplingPreset.HIGH_ACCURACY.profile.stillIntervalMs,
+            policy.intervalFor(MovementState.STILL),
+        )
+    }
 }

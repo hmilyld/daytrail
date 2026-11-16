@@ -73,9 +73,16 @@ data class MovementSample(
  *   用它画轨迹会得到一条锯齿状的粗线，完全没有参考价值
  */
 class SamplingPolicy(
-    private val preset: SamplingPreset,
+    /**
+     * 当前档位。可变：用户在设置里切换档位后必须立即生效。
+     *
+     * 用 `var` 而不是重建整个 Policy，是为了保住滞回状态
+     * （`consecutiveStill` / `stillSinceMs`）——否则每次切换档位
+     * 都会让「静止多久后休眠」从零重新计时。
+     */
+    var preset: SamplingPreset,
 ) {
-    private val profile = preset.profile
+    private val profile: SamplingProfile get() = preset.profile
 
     /** 静止判定的位移半径（米）。 */
     private val stillRadiusM = 50.0
