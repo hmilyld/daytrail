@@ -101,8 +101,11 @@ private fun TodayContent(
                 onMapCreated = { map -> amap = map },
             )
             // 当前位置标记：自己画，不依赖高德定位 SDK 的蓝点。
-            // 始终跟随：用户打开应用就想知道自己在哪，与是否在记录无关。
-            CurrentLocationMarker(amap = amap)
+            // 首次定位自动居中，打开应用就能看到自己在哪。
+            CurrentLocationMarker(
+                amap = amap,
+                recording = state.recordingState == RecordingState.RECORDING,
+            )
             TrackOverlay(
                 amap = amap,
                 points = state.trackPoints,

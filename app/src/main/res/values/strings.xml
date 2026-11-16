@@ -130,6 +130,7 @@
     <string name="record_starting">开始记录</string>
     <string name="record_paused_status">已暂停</string>
     <string name="record_sleeping_status">静止中</string>
+    <string name="record_waiting_location">正在获取定位…</string>
     <string name="record_elapsed">已记录 %1$d 分钟 · %2$d 个点</string>
 
     <!-- 历史与详情 -->

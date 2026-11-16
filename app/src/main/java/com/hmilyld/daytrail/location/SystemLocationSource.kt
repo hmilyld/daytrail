@@ -80,60 +80,70 @@ class SystemLocationSource(
     /**
      * 等待一次位置更新。
      *
-     * 用 `invokeOnCancellation` 移除监听：超时或被取消时不会泄漏监听器。
+     * 用 try/finally 保证监听器一定被移除——无论成功、超时还是被取消。
+     *
+     * 早期实现只在 `invokeOnCancellation` 里移除，成功返回时不移除，
+     * 导致每取一次位置就残留一个监听器。地图页每 15 秒取一次，
+     * 几分钟后系统 LocationManager 被几十个监听器拖垮，后续请求拿不到回调，
+     * 表现为「开始记录后没有任何采样数据」。
      */
     @SuppressLint("MissingPermission")
     private suspend fun awaitUpdate(
         lm: LocationManager,
         providers: List<String>,
         timeoutMs: Long,
-    ): Location? =
-        withTimeoutOrNull(timeoutMs) {
-            suspendCancellableCoroutine { continuation ->
-                var delivered = false
+    ): Location? {
+        var listener: LocationListener? = null
 
-                val listener =
-                    object : LocationListener {
-                        override fun onLocationChanged(location: Location) {
-                            if (delivered) return
-                            delivered = true
-                            continuation.resumeWith(Result.success(location))
+        return try {
+            withTimeoutOrNull(timeoutMs) {
+                suspendCancellableCoroutine { continuation ->
+                    var delivered = false
+
+                    val currentListener =
+                        object : LocationListener {
+                            override fun onLocationChanged(location: Location) {
+                                if (delivered) return
+                                delivered = true
+                                continuation.resumeWith(Result.success(location))
+                            }
+
+                            @Deprecated("Deprecated in API 30")
+                            override fun onStatusChanged(
+                                provider: String?,
+                                status: Int,
+                                extras: android.os.Bundle?,
+                            ) = Unit
+
+                            override fun onProviderEnabled(provider: String) = Unit
+
+                            override fun onProviderDisabled(provider: String) = Unit
                         }
+                    listener = currentListener
 
-                        @Deprecated("Deprecated in API 30")
-                        override fun onStatusChanged(
-                            provider: String?,
-                            status: Int,
-                            extras: android.os.Bundle?,
-                        ) = Unit
-
-                        override fun onProviderEnabled(provider: String) = Unit
-
-                        override fun onProviderDisabled(provider: String) = Unit
-                    }
-
-                continuation.invokeOnCancellation {
-                    runCatching { lm.removeUpdates(listener) }
-                }
-
-                runCatching {
-                    providers.forEach { provider ->
-                        lm.requestLocationUpdates(
-                            provider,
-                            0L,
-                            0f,
-                            listener,
-                            Looper.getMainLooper(),
-                        )
-                    }
-                }.onFailure {
-                    if (!delivered) {
-                        delivered = true
-                        continuation.resumeWith(Result.success(null))
+                    runCatching {
+                        providers.forEach { provider ->
+                            lm.requestLocationUpdates(
+                                provider,
+                                0L,
+                                0f,
+                                currentListener,
+                                Looper.getMainLooper(),
+                            )
+                        }
+                    }.onFailure {
+                        if (!delivered) {
+                            delivered = true
+                            continuation.resumeWith(Result.success(null))
+                        }
                     }
                 }
             }
+        } finally {
+            // 关键：任何路径都要移除，否则监听器会持续累积
+            listener?.let { runCatching { lm.removeUpdates(it) } }
         }
+    }
 
     @SuppressLint("MissingPermission")
     private fun enabledProviders(

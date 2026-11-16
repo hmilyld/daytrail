@@ -14,6 +14,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import com.amap.api.maps.AMap
+import com.amap.api.maps.CameraUpdateFactory
 import com.amap.api.maps.model.BitmapDescriptor
 import com.amap.api.maps.model.BitmapDescriptorFactory
 import com.amap.api.maps.model.LatLng
@@ -41,8 +42,10 @@ import kotlinx.coroutines.isActive
 @Composable
 fun CurrentLocationMarker(
     amap: AMap?,
-    /** 是否持续跟随更新。记录中应开启，只看历史时应关闭以省电。 */
-    follow: Boolean = true,
+    /** 是否正在记录。记录中降低轮询频率，避免与采集服务抢定位资源。 */
+    recording: Boolean = false,
+    /** 首次取到位置时是否自动把镜头移过去。 */
+    autoCenterOnFirstFix: Boolean = true,
     /** 位置变化回调，供「回到当前位置」按钮复用同一个坐标。 */
     onLocationChanged: ((GeoPoint) -> Unit)? = null,
 ) {
@@ -61,12 +64,15 @@ fun CurrentLocationMarker(
         }
     }
 
-    LaunchedEffect(currentAmap, follow) {
+    // 是否已经自动居中过。只在首次定位时移动镜头，
+    // 之后不再干预——否则用户拖动地图会被强行拽回。
+    var centered by remember { mutableStateOf(false) }
+
+    LaunchedEffect(currentAmap, recording) {
         val map = currentAmap ?: return@LaunchedEffect
-        if (!follow) return@LaunchedEffect
 
         val source = SystemLocationSource(context)
-        var firstFixDone = false
+        var hasFix = false
 
         while (isActive) {
             val fix = source.requestOnce(highAccuracy = true, timeoutMs = 8_000L)
@@ -87,26 +93,50 @@ fun CurrentLocationMarker(
                                     .zIndex(10f),
                             )
                         }.getOrNull()
-                    firstFixDone = true
+                    hasFix = true
                 } else {
                     runCatching { existing.position = position }
+                }
+
+                // 首次定位自动居中：打开应用就该看到自己在哪
+                if (autoCenterOnFirstFix && !centered) {
+                    centered = true
+                    runCatching {
+                        map.animateCamera(
+                            CameraUpdateFactory.newLatLngZoom(position, INITIAL_ZOOM),
+                        )
+                    }
                 }
 
                 currentOnLocation?.invoke(point)
             }
 
-            // 首次取到位置后缩短间隔，让图标跟随更跟手；
-            // 未取到时保持较长间隔，避免频繁唤醒耗电
-            delay(if (firstFixDone) FOLLOW_INTERVAL_MS else RETRY_INTERVAL_MS)
+            // 间隔策略：
+            // - 未取到位置时 5 秒重试，让图标尽快出现
+            // - 记录中 60 秒：采集服务才是主力，这里只做视觉参考
+            // - 未记录时 15 秒：跟随够用，几乎不耗电
+            val interval =
+                when {
+                    !hasFix -> RETRY_INTERVAL_MS
+                    recording -> RECORDING_INTERVAL_MS
+                    else -> IDLE_INTERVAL_MS
+                }
+            delay(interval)
         }
     }
 }
 
-/** 已定位后的跟随间隔。15 秒对「看自己在哪」完全够用，且几乎不耗电。 */
-private const val FOLLOW_INTERVAL_MS = 15_000L
-
-/** 尚未定位时的重试间隔。稍短一点，让图标尽快出现。 */
+/** 尚未取到位置时的重试间隔。稍短一点，让图标尽快出现。 */
 private const val RETRY_INTERVAL_MS = 5_000L
+
+/** 记录中的轮询间隔。采集服务是主力，这里只做视觉参考，不宜抢资源。 */
+private const val RECORDING_INTERVAL_MS = 60_000L
+
+/** 未记录时的跟随间隔。 */
+private const val IDLE_INTERVAL_MS = 15_000L
+
+/** 首次定位的缩放级别。17 约等于能看清街区。 */
+private const val INITIAL_ZOOM = 17f
 
 /**
  * 用代码绘制定位图标：蓝色实心圆 + 白色描边 + 白色中心点。

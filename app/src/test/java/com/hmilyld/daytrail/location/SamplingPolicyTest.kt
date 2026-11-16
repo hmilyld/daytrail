@@ -2,7 +2,9 @@ package com.hmilyld.daytrail.location
 
 import com.hmilyld.daytrail.core.GeoPoint
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SamplingPolicyTest {
@@ -117,6 +119,33 @@ class SamplingPolicyTest {
         assertEquals(600_000L, policy.intervalFor(MovementState.STILL))
         assertEquals(180_000L, policy.intervalFor(MovementState.WALKING))
         assertEquals(60_000L, policy.intervalFor(MovementState.DRIVING))
+    }
+
+    @Test
+    fun `only still and sleeping allow coarse location`() {
+        // 静止时轨迹几乎不变，用基站定位省电
+        assertFalse(policy.requiresHighAccuracy(MovementState.STILL))
+        assertFalse(policy.requiresHighAccuracy(MovementState.SLEEPING))
+    }
+
+    @Test
+    fun `moving requires gps`() {
+        // 移动时基站定位精度 100-500 米，轨迹会变成锯齿状粗线
+        assertTrue(policy.requiresHighAccuracy(MovementState.WALKING))
+        assertTrue(policy.requiresHighAccuracy(MovementState.DRIVING))
+    }
+
+    @Test
+    fun `interval changes immediately after state transition`() {
+        val previous = sample(metersNorth = 0.0, secondsLater = 0)
+        // 60 秒跑 1500 米 = 90 km/h，应进入 DRIVING
+        val fast = sample(metersNorth = 1500.0, secondsLater = 60, speedMps = 25f)
+
+        val state = policy.nextState(previous, fast, MovementState.WALKING)
+
+        assertEquals(MovementState.DRIVING, state)
+        // 状态变了的同一刻，间隔就必须跟着变，不能沿用旧值
+        assertEquals(60_000L, policy.intervalFor(state))
     }
 
     @Test

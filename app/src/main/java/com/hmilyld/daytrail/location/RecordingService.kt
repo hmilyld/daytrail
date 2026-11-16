@@ -58,6 +58,9 @@ class RecordingService : Service() {
     /** 高德连续失败次数，达到上限后切系统定位。 */
     private var amapFailures = 0
 
+    /** 本会话是否已经成功采到过点。用于给首次定位更长的超时。 */
+    private var hasEverSampled = false
+
     private var pendingWake: (() -> Unit)? = null
 
     private val appContainer
@@ -158,8 +161,8 @@ class RecordingService : Service() {
 
     private suspend fun runSamplingLoop() {
         while (true) {
-            val interval = samplingPolicy.intervalFor(currentState)
-            if (interval == null) {
+            // null 表示当前应休眠，不主动采样
+            if (samplingPolicy.intervalFor(currentState) == null) {
                 // 休眠：停掉定位，交给传感器与兜底闹钟
                 sleepController?.sleep()
                 notify(buildNotification(getString(R.string.record_sleeping_status)))
@@ -181,29 +184,51 @@ class RecordingService : Service() {
             val fix =
                 requestFixWithFallback(
                     highAccuracy = samplingPolicy.requiresHighAccuracy(currentState),
+                    firstFix = !hasEverSampled,
                 )
-            if (fix != null && fix.errorCode == 0) {
-                val previousSample =
-                    lastFix?.let { MovementSample(it.point, it.timestampMs, it.speedMps) }
-                currentState =
-                    samplingPolicy.nextState(
-                        previous = previousSample,
-                        sample = MovementSample(fix.point, fix.timestampMs, fix.speedMps),
-                        currentState = currentState,
-                    )
-                lastFix = fix
 
-                if (recorder.offer(fix)) {
-                    acceptedCount++
-                    updateNotification()
-                }
+            val accepted = fix != null && fix.errorCode == 0 && recordFix(fix)
+
+            if (accepted) {
+                hasEverSampled = true
+                // 必须重新计算：recordFix 里可能已经把状态从 WALKING 改成 DRIVING，
+                // 沿用循环开头算的间隔会慢一拍
+                val nextInterval = samplingPolicy.intervalFor(currentState) ?: 0L
+                Log.d(TAG, "采样成功，等待 ${nextInterval / 1000}s，状态=$currentState")
+                delay(nextInterval)
             } else {
-                Log.d(TAG, "本轮定位未取得有效结果：${fix?.errorCode}")
+                // 失败时不能等完整间隔：步行档是 3 分钟，
+                // 用户会觉得「点了开始记录没反应」。改用短间隔重试。
+                Log.d(TAG, "本轮未采到点（error=${fix?.errorCode}），$RETRY_DELAY_MS ms 后重试")
+                notify(buildNotification(getString(R.string.record_waiting_location)))
+                delay(RETRY_DELAY_MS)
             }
-
-            Log.d(TAG, "等待 ${interval / 1000}s 后采下一个点，状态=$currentState")
-            delay(interval)
         }
+    }
+
+    /**
+     * 把定位结果写入缓冲。
+     *
+     * @return 是否被接受（过滤器可能因精度差、跳变等原因丢弃）
+     */
+    private suspend fun recordFix(fix: LocationFix): Boolean {
+        val previousSample = lastFix?.let { MovementSample(it.point, it.timestampMs, it.speedMps) }
+        currentState =
+            samplingPolicy.nextState(
+                previous = previousSample,
+                sample = MovementSample(fix.point, fix.timestampMs, fix.speedMps),
+                currentState = currentState,
+            )
+        lastFix = fix
+
+        val accepted = recorder.offer(fix)
+        if (accepted) {
+            acceptedCount++
+            updateNotification()
+        } else {
+            Log.d(TAG, "定位结果被过滤器丢弃（精度 ${fix.accuracyMeters}m）")
+        }
+        return accepted
     }
 
     /**
@@ -212,16 +237,25 @@ class RecordingService : Service() {
      * 降级策略：
      * 1. 优先高德（多源融合、精度更好）
      * 2. 高德连续失败达到阈值 → 本会话永久切到系统定位
-     * 3. 系统定位也不可用时，这一轮就放弃，等下一个间隔
+     * 3. 系统定位也不可用时，这一轮就放弃，等重试
+     *
+     * @param firstFix 是否本次会话的第一次定位。GPS 冷启动通常要 30–60 秒，
+     *   首次给更长的超时，否则几乎必然失败。
      */
-    private suspend fun requestFixWithFallback(highAccuracy: Boolean): LocationFix? {
+    private suspend fun requestFixWithFallback(
+        highAccuracy: Boolean,
+        firstFix: Boolean,
+    ): LocationFix? {
+        val timeout =
+            if (firstFix) INITIAL_FIX_TIMEOUT_MS else FIX_TIMEOUT_MS
+
         val useSystem = useSystemSource
 
         val fix =
             if (useSystem) {
-                systemSource.requestOnce(highAccuracy, FIX_TIMEOUT_MS)
+                systemSource.requestOnce(highAccuracy, timeout)
             } else {
-                amapEngine.requestOnce(highAccuracy, AMAP_TIMEOUT_MS)
+                amapEngine.requestOnce(highAccuracy, timeout)
             }
 
         Log.d(TAG, "定位结果 source=${if (useSystem) "system" else "amap"} error=${fix?.errorCode}")
@@ -354,6 +388,22 @@ class RecordingService : Service() {
 
         /** 高德定位的超时。高德在不可用时会很快返回错误码，不必等满。 */
         private const val AMAP_TIMEOUT_MS = 12_000L
+
+        /**
+         * 首次定位的超时。
+         *
+         * GPS 冷启动需要搜星，通常 30–60 秒。用 25 秒会几乎必然失败，
+         * 用户看到的就是「点了开始记录没反应」。
+         */
+        private const val INITIAL_FIX_TIMEOUT_MS = 45_000L
+
+        /**
+         * 采点失败后的重试间隔。
+         *
+         * 不能用状态间隔：步行档是 3 分钟，用户点「开始记录」后
+         * 要等 3 分钟才看到第一个点，会以为功能坏了。
+         */
+        private const val RETRY_DELAY_MS = 15_000L
 
         /** 高德连续失败多少次后切系统定位。 */
         private const val AMAP_FAILURE_LIMIT = 2
