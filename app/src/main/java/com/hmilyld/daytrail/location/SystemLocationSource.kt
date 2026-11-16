@@ -156,14 +156,26 @@ class SystemLocationSource(
             runCatching { lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER) }
                 .getOrDefault(false)
 
-        return when {
-            highAccuracy && gpsEnabled -> listOf(LocationManager.GPS_PROVIDER)
-            networkEnabled && gpsEnabled ->
-                listOf(LocationManager.NETWORK_PROVIDER, LocationManager.GPS_PROVIDER)
-            networkEnabled -> listOf(LocationManager.NETWORK_PROVIDER)
-            gpsEnabled -> listOf(LocationManager.GPS_PROVIDER)
-            else -> emptyList()
+        // 两种 provider 都注册，先回调的胜出。
+        //
+        // 早期实现「高精度时只请求 GPS」，结果室内 GPS 永远定不到，
+        // 整段轨迹为空、通知一直停在「正在获取定位」。
+        // 网络定位精度差一些，但至少能给出位置，比什么都没有好。
+        return buildList {
+            if (highAccuracy) {
+                if (gpsEnabled) add(LocationManager.GPS_PROVIDER)
+                if (networkEnabled) add(LocationManager.NETWORK_PROVIDER)
+            } else {
+                if (networkEnabled) add(LocationManager.NETWORK_PROVIDER)
+                if (gpsEnabled) add(LocationManager.GPS_PROVIDER)
+            }
         }
+    }
+
+    /** 系统是否至少有一个定位 provider 可用。没有说明定位开关被关掉了。 */
+    fun hasAnyProvider(): Boolean {
+        val lm = manager ?: return false
+        return enabledProviders(lm, highAccuracy = true).isNotEmpty()
     }
 
     private fun Location.toFix(): LocationFix =

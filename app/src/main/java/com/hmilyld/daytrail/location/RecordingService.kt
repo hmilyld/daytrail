@@ -17,6 +17,7 @@ import com.hmilyld.daytrail.R
 import com.hmilyld.daytrail.data.prefs.RecordingState
 import com.hmilyld.daytrail.data.prefs.SamplingTier
 import com.hmilyld.daytrail.data.repo.todayKey
+import com.hmilyld.daytrail.permission.Permissions
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -62,6 +63,9 @@ class RecordingService : Service() {
     /** 本会话是否已经成功采到过点。用于给首次定位更长的超时。 */
     private var hasEverSampled = false
 
+    /** 连续失败预算。耗尽后停止采集，避免无限重试耗电。 */
+    private val failureBudget = SamplingFailureBudget()
+
     private var pendingWake: (() -> Unit)? = null
 
     private val appContainer
@@ -96,6 +100,7 @@ class RecordingService : Service() {
             ACTION_START -> startRecording()
             ACTION_PAUSE -> pauseRecording()
             ACTION_STOP -> stopRecording()
+            ACTION_RETRY -> retryRecording()
             else -> startRecording()
         }
         return START_STICKY
@@ -123,6 +128,11 @@ class RecordingService : Service() {
     private fun startRecording() {
         if (loopJob?.isActive == true) return
 
+        // 新会话：清掉上一次的异常状态与失败计数
+        failureBudget.reset()
+        hasEverSampled = false
+        appContainer.recordingState.setLocationIssue(null)
+
         startForegroundCompat(buildNotification(getString(R.string.record_starting)))
 
         loopJob =
@@ -147,9 +157,18 @@ class RecordingService : Service() {
         loopJob = null
         recorder.stopAutoFlush()
         sleepController?.wake()
+        amapEngine.release()
+        systemSource.release()
         appContainer.recordingState.update(RecordingState.PAUSED)
+        appContainer.recordingState.setLocationIssue(null)
         scope.launch { recorder.finish() }
         notify(buildNotification(getString(R.string.record_paused_status)))
+    }
+
+    /** 定位异常后的手动重试。重置预算并重新开始采集。 */
+    private fun retryRecording() {
+        Log.d(TAG, "用户手动重试定位")
+        startRecording()
     }
 
     private fun stopRecording() {
@@ -199,6 +218,7 @@ class RecordingService : Service() {
 
             if (accepted) {
                 hasEverSampled = true
+                failureBudget.recordSuccess()
                 // 必须重新计算：recordFix 里可能已经把状态从 WALKING 改成 DRIVING，
                 // 沿用循环开头算的间隔会慢一拍
                 val nextInterval = samplingPolicy.intervalFor(currentState) ?: 0L
@@ -207,11 +227,51 @@ class RecordingService : Service() {
             } else {
                 // 失败时不能等完整间隔：步行档是 3 分钟，
                 // 用户会觉得「点了开始记录没反应」。改用短间隔重试。
-                Log.d(TAG, "本轮未采到点（error=${fix?.errorCode}），$RETRY_DELAY_MS ms 后重试")
+                val reason = detectFailureReason(fix?.errorCode)
+                val exhausted = failureBudget.recordFailure()
+                Log.d(
+                    TAG,
+                    "本轮未采到点（reason=$reason error=${fix?.errorCode}），" +
+                        "第 ${failureBudget.consecutiveFailures} 次失败",
+                )
+
+                if (exhausted) {
+                    // 放弃采集：继续重试只会持续唤醒 GPS，纯耗电且没有意义。
+                    // 交给界面与通知明确告知原因，等用户处理。
+                    enterLocationIssue(reason)
+                    return
+                }
+
                 notify(buildNotification(getString(R.string.record_waiting_location)))
                 delay(RETRY_DELAY_MS)
             }
         }
+    }
+
+    /**
+     * 判断失败原因，给用户可操作的提示。
+     *
+     * 这三类原因的处理方式完全不同：权限要去设置页、开关要去快捷面板、
+     * 纯粹信号差只需换个地方再试。
+     */
+    private fun detectFailureReason(lastErrorCode: Int?): LocationFailureReason =
+        when {
+            !Permissions.hasFineLocation(this) -> LocationFailureReason.PERMISSION_DENIED
+            !Permissions.isLocationServiceEnabled(this) -> LocationFailureReason.LOCATION_DISABLED
+            !systemSource.hasAnyProvider() -> LocationFailureReason.LOCATION_DISABLED
+            lastErrorCode == null -> LocationFailureReason.NO_FIX
+            else -> LocationFailureReason.NO_FIX
+        }
+
+    /** 进入「定位异常」状态：停止采集，保留通知与界面提示。 */
+    private fun enterLocationIssue(reason: LocationFailureReason) {
+        loopJob?.cancel()
+        loopJob = null
+        amapEngine.release()
+        systemSource.release()
+
+        appContainer.recordingState.setLocationIssue(reason)
+        notify(buildNotification(getString(R.string.record_location_failed)))
     }
 
     /**
@@ -322,13 +382,22 @@ class RecordingService : Service() {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
 
+        val issue = appContainer.recordingState.locationIssue.value
         val isRecording = appContainer.recordingState.state.value == RecordingState.RECORDING
-        val actionIntent = if (isRecording) ACTION_PAUSE else ACTION_START
+
+        // 定位异常时主操作变成「重试」，而不是「暂停」——
+        // 此时采集已经停了，暂停没有意义。
+        val actionIntent =
+            when {
+                issue != null -> ACTION_RETRY
+                isRecording -> ACTION_PAUSE
+                else -> ACTION_START
+            }
         val actionLabel =
-            if (isRecording) {
-                getString(R.string.today_action_pause)
-            } else {
-                getString(R.string.today_action_start)
+            when {
+                issue != null -> getString(R.string.action_retry)
+                isRecording -> getString(R.string.today_action_pause)
+                else -> getString(R.string.today_action_start)
             }
 
         val actionPending =
@@ -416,6 +485,7 @@ class RecordingService : Service() {
         const val ACTION_START = "com.hmilyld.daytrail.action.START"
         const val ACTION_PAUSE = "com.hmilyld.daytrail.action.PAUSE"
         const val ACTION_STOP = "com.hmilyld.daytrail.action.STOP"
+        const val ACTION_RETRY = "com.hmilyld.daytrail.action.RETRY"
 
         fun start(context: Context) {
             context.startForegroundService(
@@ -432,6 +502,13 @@ class RecordingService : Service() {
         fun stop(context: Context) {
             context.startService(
                 Intent(context, RecordingService::class.java).setAction(ACTION_STOP),
+            )
+        }
+
+        /** 定位异常后的手动重试。 */
+        fun retry(context: Context) {
+            context.startService(
+                Intent(context, RecordingService::class.java).setAction(ACTION_RETRY),
             )
         }
 

@@ -10,6 +10,7 @@ import com.hmilyld.daytrail.data.prefs.RecordingState
 import com.hmilyld.daytrail.data.prefs.SettingsStore
 import com.hmilyld.daytrail.data.repo.TrackRepository
 import com.hmilyld.daytrail.data.repo.todayKey
+import com.hmilyld.daytrail.location.LocationFailureReason
 import com.hmilyld.daytrail.location.RecordingStateHolder
 import com.hmilyld.daytrail.ui.components.map.MapStayMarker
 import kotlinx.coroutines.flow.SharingStarted
@@ -31,6 +32,8 @@ data class TodayUiState(
     val stayMarkers: List<MapStayMarker> = emptyList(),
     /** 地图的文字版概要，供 TalkBack 使用。 */
     val accessibilitySummary: String = "",
+    /** 定位异常原因。非 null 表示采集已停止，界面应提示并给重试入口。 */
+    val locationIssue: LocationFailureReason? = null,
 )
 
 /**
@@ -55,7 +58,8 @@ class TodayViewModel(
             repository.observeDay(dayKey),
             repository.observePoints(dayKey),
             repository.observeStays(dayKey),
-        ) { state, day, points, stays ->
+            recordingState.locationIssue,
+        ) { state, day, points, stays, issue ->
             TodayUiState(
                 dayKey = dayKey,
                 recordingState = state,
@@ -84,6 +88,7 @@ class TodayViewModel(
                     } else {
                         "轨迹地图，今日 ${stays.size} 处停留，共 ${points.size} 个采样点"
                     },
+                locationIssue = issue,
             )
         }.stateIn(
             scope = viewModelScope,

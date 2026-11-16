@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.outlined.LocationOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
@@ -44,6 +45,7 @@ import com.amap.api.maps.AMap
 import com.hmilyld.daytrail.AppContainer
 import com.hmilyld.daytrail.R
 import com.hmilyld.daytrail.data.prefs.RecordingState
+import com.hmilyld.daytrail.location.LocationFailureReason
 import com.hmilyld.daytrail.location.RecordingService
 import com.hmilyld.daytrail.ui.appViewModelFactory
 import com.hmilyld.daytrail.ui.components.MapAccessibilityOverlay
@@ -79,6 +81,7 @@ fun TodayScreen(
         onStart = { RecordingService.start(context) },
         onPause = { RecordingService.pause(context) },
         onStop = { RecordingService.stop(context) },
+        onRetry = { RecordingService.retry(context) },
         modifier = modifier,
     )
 }
@@ -89,6 +92,7 @@ private fun TodayContent(
     onStart: () -> Unit,
     onPause: () -> Unit,
     onStop: () -> Unit,
+    onRetry: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val mapAvailable = rememberAmapAvailable()
@@ -158,6 +162,18 @@ private fun TodayContent(
             )
         }
 
+        // 定位异常：采集已停止，明确告知原因并给一键重试
+        state.locationIssue?.let { issue ->
+            LocationIssueBanner(
+                reason = issue,
+                onRetry = onRetry,
+                modifier =
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(start = 12.dp, end = 12.dp, bottom = 220.dp),
+            )
+        }
+
         StatsSheet(
             state = state,
             onStart = onStart,
@@ -220,6 +236,59 @@ private fun RecordingPill(
             if (state != RecordingState.IDLE) {
                 Text(text = "·", style = MaterialTheme.typography.labelLarge)
                 Text(text = duration, style = MaterialTheme.typography.labelLarge)
+            }
+        }
+    }
+}
+
+/**
+ * 定位异常提示条。
+ *
+ * 三种原因的修复方式不同，所以文案分开给：
+ * 权限问题要去设置页、开关问题要去快捷面板、信号问题只需换个地方重试。
+ */
+@Composable
+private fun LocationIssueBanner(
+    reason: LocationFailureReason,
+    onRetry: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val message =
+        when (reason) {
+            LocationFailureReason.PERMISSION_DENIED ->
+                stringResource(R.string.location_issue_permission)
+            LocationFailureReason.LOCATION_DISABLED ->
+                stringResource(R.string.location_issue_disabled)
+            LocationFailureReason.NO_FIX ->
+                stringResource(R.string.location_issue_no_fix)
+            LocationFailureReason.UNKNOWN ->
+                stringResource(R.string.location_issue_unknown)
+        }
+
+    Surface(
+        color = MaterialTheme.colorScheme.errorContainer,
+        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        shape = MaterialTheme.shapes.medium,
+        shadowElevation = 4.dp,
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.LocationOff,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+            )
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.weight(1f),
+            )
+            FilledTonalButton(onClick = onRetry) {
+                Text(text = stringResource(R.string.action_retry))
             }
         }
     }
@@ -414,6 +483,7 @@ private fun TodayIdlePreview() {
             onStart = {},
             onPause = {},
             onStop = {},
+            onRetry = {},
         )
     }
 }
@@ -437,6 +507,7 @@ private fun TodayRecordingPreview() {
             onStart = {},
             onPause = {},
             onStop = {},
+            onRetry = {},
         )
     }
 }

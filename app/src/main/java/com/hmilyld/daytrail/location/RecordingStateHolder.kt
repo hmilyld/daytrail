@@ -15,12 +15,23 @@ import kotlinx.coroutines.flow.asStateFlow
  *
  * 因此这里只在内存里保存，进程重启即回到 IDLE，与实际状态一致。
  * 服务在 onCreate/onDestroy 里更新它，界面订阅它。
+ *
+ * 还承载「定位异常」信息：连续失败后采集会停止，界面据此显示原因与重试入口。
  */
 class RecordingStateHolder {
     private val _state = MutableStateFlow(RecordingState.IDLE)
     val state: StateFlow<RecordingState> = _state.asStateFlow()
 
+    private val _locationIssue = MutableStateFlow<LocationFailureReason?>(null)
+
+    /** 非 null 表示采集已因定位失败而停止，界面应提示原因并给重试入口。 */
+    val locationIssue: StateFlow<LocationFailureReason?> = _locationIssue.asStateFlow()
+
     fun update(newState: RecordingState) {
         _state.value = newState
+    }
+
+    fun setLocationIssue(reason: LocationFailureReason?) {
+        _locationIssue.value = reason
     }
 }
