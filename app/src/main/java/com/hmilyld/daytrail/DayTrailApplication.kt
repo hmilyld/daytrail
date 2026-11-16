@@ -1,7 +1,6 @@
 package com.hmilyld.daytrail
 
 import android.app.Application
-import com.amap.api.location.AMapLocationClient
 import com.amap.api.maps.MapsInitializer
 import com.hmilyld.daytrail.data.prefs.SettingsStore
 
@@ -18,11 +17,11 @@ class DayTrailApplication : Application() {
     override fun onCreate() {
         super.onCreate()
 
-        // 高德合规：必须早于任何地图或定位对象创建
+        // 高德地图合规：必须早于任何 MapView 创建。
+        // 注意这里只处理地图 SDK；定位走 Android 系统 LocationManager，
+        // 不使用高德定位 SDK（见 LocationSource 的注释）。
         MapsInitializer.updatePrivacyShow(this, true, true)
         MapsInitializer.updatePrivacyAgree(this, true)
-        AMapLocationClient.updatePrivacyShow(this, true, true)
-        AMapLocationClient.updatePrivacyAgree(this, true)
 
         container = AppContainer(this)
     }

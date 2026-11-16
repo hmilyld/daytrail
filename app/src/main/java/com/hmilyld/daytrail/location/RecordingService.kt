@@ -42,7 +42,6 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 class RecordingService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-    private lateinit var amapEngine: LocationEngine
     private lateinit var systemSource: SystemLocationSource
     private lateinit var recorder: TrackRecorder
     private lateinit var samplingPolicy: SamplingPolicy
@@ -51,12 +50,6 @@ class RecordingService : Service() {
     private var loopJob: Job? = null
     private var currentState = MovementState.WALKING
     private var lastFix: LocationFix? = null
-
-    /** 本会话是否已切到系统定位。 */
-    private var useSystemSource = false
-
-    /** 高德连续失败次数，达到上限后切系统定位。 */
-    private var amapFailures = 0
 
     /** 本会话是否已经成功采到过点。用于给首次定位更长的超时。 */
     private var hasEverSampled = false
@@ -73,7 +66,6 @@ class RecordingService : Service() {
         super.onCreate()
         createNotificationChannel()
 
-        amapEngine = LocationEngine(this)
         systemSource = SystemLocationSource(this)
         samplingPolicy = SamplingPolicy(SamplingPreset.POWER_SAVER)
         recorder =
@@ -114,7 +106,6 @@ class RecordingService : Service() {
     override fun onDestroy() {
         loopJob?.cancel()
         sleepController?.release()
-        amapEngine.release()
         systemSource.release()
         appContainer.recordingState.update(RecordingState.IDLE)
         scope.cancel()
@@ -147,7 +138,6 @@ class RecordingService : Service() {
         loopJob = null
         recorder.stopAutoFlush()
         sleepController?.wake()
-        amapEngine.release()
         systemSource.release()
         appContainer.recordingState.update(RecordingState.PAUSED)
         appContainer.recordingState.setLocationIssue(null)
@@ -199,7 +189,7 @@ class RecordingService : Service() {
             sleepController?.wake()
 
             val fix =
-                requestFixWithFallback(
+                requestFix(
                     highAccuracy = samplingPolicy.requiresHighAccuracy(currentState),
                     firstFix = !hasEverSampled,
                 )
@@ -268,7 +258,6 @@ class RecordingService : Service() {
     private fun enterLocationIssue(reason: LocationFailureReason) {
         loopJob?.cancel()
         loopJob = null
-        amapEngine.release()
         systemSource.release()
 
         appContainer.recordingState.setLocationIssue(reason)
@@ -298,57 +287,28 @@ class RecordingService : Service() {
     }
 
     /**
-     * 请求一次定位，并处理高德不可用的降级。
+     * 请求一次定位。
      *
-     * 降级策略：
-     * 1. 优先高德（多源融合、精度更好）
-     * 2. 高德连续失败达到阈值 → 本会话永久切到系统定位
-     * 3. 系统定位也不可用时，这一轮就放弃，等重试
+     * **只用系统定位（Android LocationManager）**，不再使用高德定位 SDK。
+     *
+     * 原因：高德定位需要 `com.amap.api.location.APSService` 在 Manifest 里声明，
+     * 漏声明会导致它永远返回 error 7（定位失败），而地图上的位置圆点
+     * （走系统定位）却正常显示——用户会看到「地图上有圆点但说定位失败」。
+     * 两套定位并存还会互相抢资源、各自算一套失败计数。
+     *
+     * 系统定位同样能拿到 GPS 与网络定位，对本应用「记录大概位置」的需求足够，
+     * 而且不依赖厂商 SDK 的额外服务。
      *
      * @param firstFix 是否本次会话的第一次定位。GPS 冷启动通常要 30–60 秒，
      *   首次给更长的超时，否则几乎必然失败。
      */
-    private suspend fun requestFixWithFallback(
+    private suspend fun requestFix(
         highAccuracy: Boolean,
         firstFix: Boolean,
     ): LocationFix? {
         val timeout =
             if (firstFix) INITIAL_FIX_TIMEOUT_MS else FIX_TIMEOUT_MS
-
-        val useSystem = useSystemSource
-
-        val fix =
-            if (useSystem) {
-                systemSource.requestOnce(highAccuracy, timeout)
-            } else {
-                amapEngine.requestOnce(highAccuracy, timeout)
-            }
-
-        Log.d(TAG, "定位结果 source=${if (useSystem) "system" else "amap"} error=${fix?.errorCode}")
-
-        if (useSystem) return fix
-
-        if (fix != null && fix.errorCode == 0) {
-            amapFailures = 0
-            return fix
-        }
-
-        amapFailures++
-        if (amapFailures >= AMAP_FAILURE_LIMIT) {
-            if (systemSource.isAvailable) {
-                Log.w(
-                    TAG,
-                    "高德定位连续失败 $amapFailures 次（错误码 ${fix?.errorCode}），" +
-                        "本会话切换到系统定位",
-                )
-                useSystemSource = true
-                amapEngine.release()
-                // 立刻用系统定位重试一次，不必等到下一个间隔
-                return systemSource.requestOnce(highAccuracy, FIX_TIMEOUT_MS)
-            }
-            Log.w(TAG, "高德定位失败且系统定位不可用，本轮放弃")
-        }
-        return fix
+        return systemSource.requestOnce(highAccuracy, timeout)
     }
 
     private fun handleWake() {
@@ -470,9 +430,6 @@ class RecordingService : Service() {
         /** 单次定位的等待上限。粗定位在室内可能要十几秒，给足余量。 */
         private const val FIX_TIMEOUT_MS = 25_000L
 
-        /** 高德定位的超时。高德在不可用时会很快返回错误码，不必等满。 */
-        private const val AMAP_TIMEOUT_MS = 12_000L
-
         /**
          * 首次定位的超时。
          *
@@ -488,9 +445,6 @@ class RecordingService : Service() {
          * 要等 3 分钟才看到第一个点，会以为功能坏了。
          */
         private const val RETRY_DELAY_MS = 15_000L
-
-        /** 高德连续失败多少次后切系统定位。 */
-        private const val AMAP_FAILURE_LIMIT = 2
 
         const val ACTION_START = "com.hmilyld.daytrail.action.START"
         const val ACTION_PAUSE = "com.hmilyld.daytrail.action.PAUSE"

@@ -1,8 +1,16 @@
 package com.hmilyld.daytrail.location
 
+import com.hmilyld.daytrail.core.CoordinateTransform
 import com.hmilyld.daytrail.core.GeoPoint
 
-/** 坐标所属的坐标系。 */
+/**
+ * 坐标所属的坐标系。
+ *
+ * - 高德地图底图使用 GCJ-02
+ * - Android 系统定位返回 WGS-84
+ *
+ * 入库前必须统一转成 GCJ-02，否则轨迹偏移 50–550 米。
+ */
 enum class CoordinateSystem {
     /** 国测局加密坐标，高德地图底图使用。 */
     GCJ02,
@@ -27,12 +35,19 @@ data class LocationFix(
 /**
  * 定位来源的统一接口。
  *
- * 有两个实现：
- * - [LocationEngine]：高德定位，返回 GCJ-02，多源融合、精度更好，依赖 ARM 原生库
- * - [SystemLocationSource]：Android 系统定位，返回 WGS-84，任何架构都能用
+ * 目前只有 [SystemLocationSource] 一个实现。
+ *
+ * **为什么不用高德定位 SDK**：
+ * 它需要 `com.amap.api.location.APSService` 在 Manifest 中声明，
+ * 漏声明会永远返回 error 7（定位失败），而地图上的位置圆点
+ * （走系统定位）却正常显示，用户会看到「有圆点但提示定位失败」。
+ * 两套定位并存还会互相抢资源、各自维护一套失败计数。
+ *
+ * 系统定位同样能拿到 GPS 与网络定位，对「记录大概位置」足够，
+ * 且不依赖厂商 SDK 的额外服务。
  *
  * 实现必须如实标注 [LocationFix.coordinateSystem]，
- * 由 [com.hmilyld.daytrail.location.TrackRecorder] 统一转成 GCJ-02 入库。
+ * 由 [TrackRecorder] 统一转成 GCJ-02 入库。
  */
 interface LocationSource {
     /** 请求一次定位。实现必须保证回调只触发一次。 */
@@ -53,8 +68,7 @@ interface LocationSource {
  */
 fun LocationFix.toGcj02(): GeoPoint =
     if (coordinateSystem == CoordinateSystem.WGS84) {
-        com.hmilyld.daytrail.core.CoordinateTransform
-            .wgs84ToGcj02(point)
+        CoordinateTransform.wgs84ToGcj02(point)
     } else {
         point
     }
