@@ -105,8 +105,15 @@ private fun DayDetailContent(
                         if (state.hasTrack) {
                             Text(
                                 text =
-                                    "${state.distanceKm} km · ${state.duration} · " +
-                                        "${state.stopCount} 处停留",
+                                    buildString {
+                                        if (state.timeRange.isNotBlank()) {
+                                            append(state.timeRange)
+                                            append(" · ")
+                                        }
+                                        append("${state.distanceKm} km")
+                                        append(" · ${state.duration}")
+                                        append(" · ${state.stopCount} 处停留")
+                                    },
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -147,7 +154,7 @@ private fun DayDetailContent(
                     )
                     TrackOverlay(
                         amap = amap,
-                        points = state.trackPoints,
+                        segments = state.trackSegments,
                         stays = state.stayMarkers,
                         polylineColor = polylineColor,
                         // 单日详情：按日期缩一次，看全整条轨迹

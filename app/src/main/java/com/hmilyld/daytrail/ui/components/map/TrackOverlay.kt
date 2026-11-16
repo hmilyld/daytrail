@@ -41,7 +41,14 @@ data class MapStayMarker(
 @Composable
 fun TrackOverlay(
     amap: AMap?,
-    points: List<GeoPoint>,
+    /**
+     * 已按「数据缺失」切好的段。
+     *
+     * 分段必须由 ViewModel 用 `TrackSegmenter` 计算（判据是时间 + 位移），
+     * 不能在地图层用「距离 > 2km」简单判断——省电档采样间隔是分钟级，
+     * 正常驾驶时相邻点相距 2–5 公里很常见，按距离切会把完整行程切成十几截。
+     */
+    segments: List<List<GeoPoint>>,
     stays: List<MapStayMarker>,
     polylineColor: Int,
     /**
@@ -70,14 +77,13 @@ fun TrackOverlay(
     // 已经缩放过的键。避免轨迹更新时反复抢镜头。
     var fittedKey by remember { mutableStateOf<Any?>(null) }
 
-    LaunchedEffect(currentAmap, points, stays) {
+    LaunchedEffect(currentAmap, segments, stays) {
         val map = currentAmap ?: return@LaunchedEffect
         overlay.clear()
 
-        if (points.isEmpty()) return@LaunchedEffect
+        val allPoints = segments.flatten()
+        if (allPoints.isEmpty()) return@LaunchedEffect
 
-        // 按断点分段：超过 2km 的跳跃说明数据缺失，不能连成直线
-        val segments = TrackSimplifier.splitByGaps(points)
         segments.forEach { segment ->
             if (segment.size < 2) return@forEach
             val simplified = TrackSimplifier.simplify(segment)
@@ -96,7 +102,7 @@ fun TrackOverlay(
         overlay.markers +=
             map.addMarker(
                 MarkerOptions()
-                    .position(points.first().toLatLng())
+                    .position(allPoints.first().toLatLng())
                     .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN))
                     .anchor(0.5f, 0.5f),
             )
@@ -105,7 +111,7 @@ fun TrackOverlay(
         overlay.markers +=
             map.addMarker(
                 MarkerOptions()
-                    .position(points.last().toLatLng())
+                    .position(allPoints.last().toLatLng())
                     .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_BLUE))
                     .anchor(0.5f, 0.5f),
             )
@@ -129,7 +135,7 @@ fun TrackOverlay(
         // 只在一个「键」第一次出现时缩一次：今日页传 autoFit=false 完全不缩，
         // 单日详情按日期键缩一次，之后用户拖动地图不会被拽回。
         if (autoFit && fittedKey != fitKey) {
-            fitBounds(map, points)
+            fitBounds(map, allPoints)
             fittedKey = fitKey
         }
     }

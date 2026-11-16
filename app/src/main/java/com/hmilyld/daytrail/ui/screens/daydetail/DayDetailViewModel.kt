@@ -33,6 +33,8 @@ data class TimelineEntry(
     val title: String,
     val detail: String,
     val kind: TimelineKind,
+    /** 排序用的原始时间戳。不显示，只用于正确排序。 */
+    val sortKeyMs: Long = 0L,
 )
 
 /** 单日详情状态。 */
@@ -43,15 +45,17 @@ data class DayDetailUiState(
     val duration: String = "0m",
     val stopCount: Int = 0,
     val entries: List<TimelineEntry> = emptyList(),
-    /** 地图折线用的坐标（已按时间排序）。 */
-    val trackPoints: List<GeoPoint> = emptyList(),
+    /** 地图折线用的分段坐标。按「数据缺失」切开，避免把断点连成直线。 */
+    val trackSegments: List<List<GeoPoint>> = emptyList(),
+    /** 记录时间跨度，如 `13:24 – 14:38`。让用户一眼看到实际起止。 */
+    val timeRange: String = "",
     /** 地图停留标记。 */
     val stayMarkers: List<MapStayMarker> = emptyList(),
     /** 地图的文字版行程，供 TalkBack 使用。 */
     val accessibilitySummary: String = "",
     val loading: Boolean = true,
 ) {
-    val hasTrack: Boolean get() = trackPoints.isNotEmpty()
+    val hasTrack: Boolean get() = trackSegments.any { it.size >= 2 }
 }
 
 /**
@@ -111,13 +115,19 @@ class DayDetailViewModel(
         val zone = ZoneId.systemDefault()
         val entries = mutableListOf<TimelineEntry>()
 
-        points.firstOrNull()?.let { first ->
+        // 用真实的最早/最晚时间戳，而不是依赖列表首尾顺序：
+        // 时间戳可能撞在同一毫秒，排序后首尾未必是极值。
+        val startMs = points.minOfOrNull { it.timestampMs }
+        val endMs = points.maxOfOrNull { it.timestampMs }
+
+        startMs?.let { start ->
             entries +=
                 TimelineEntry(
-                    time = formatTime(first.timestampMs, zone),
+                    time = formatTime(start, zone),
                     title = "开始记录",
                     detail = "",
                     kind = TimelineKind.START,
+                    sortKeyMs = start,
                 )
         }
 
@@ -128,6 +138,7 @@ class DayDetailViewModel(
                     title = stay.displayTitle(),
                     detail = "停留 ${(stay.endMs - stay.startMs) / 60_000} 分钟",
                     kind = TimelineKind.STOP,
+                    sortKeyMs = stay.startMs,
                 )
         }
 
@@ -138,23 +149,37 @@ class DayDetailViewModel(
                     title = "数据缺失",
                     detail = "约 ${(gap.endMs - gap.startMs) / 60_000} 分钟无数据",
                     kind = TimelineKind.GAP,
+                    sortKeyMs = gap.startMs,
                 )
         }
 
-        points.lastOrNull()?.let { last ->
+        endMs?.let { end ->
             entries +=
                 TimelineEntry(
-                    time = formatTime(last.timestampMs, zone),
+                    time = formatTime(end, zone),
                     title = "结束记录",
                     detail = "",
                     kind = TimelineKind.END,
+                    sortKeyMs = end,
                 )
         }
 
-        // 时间轴按时间排序，同刻按类型固定顺序（开始在前、结束在后）
-        val ordered = entries.sortedWith(compareBy({ it.time }, { kindOrder(it.kind) }))
+        // 时间轴按时间戳排序，同刻按类型固定顺序（开始在前、结束在后）。
+        // 不能按 "HH:mm" 字符串排序：跨天或同分钟多条目时会乱。
+        val ordered = entries.sortedWith(compareBy({ it.sortKeyMs }, { kindOrder(it.kind) }))
 
-        val geoPoints = points.map { GeoPoint(it.latitude, it.longitude) }
+        val samples =
+            points.map {
+                com.hmilyld.daytrail.domain.TrackPointSample(
+                    timestampMs = it.timestampMs,
+                    point = GeoPoint(it.latitude, it.longitude),
+                    accuracyMeters = it.accuracyMeters,
+                )
+            }
+        val segments =
+            com.hmilyld.daytrail.domain.TrackSegmenter
+                .segment(samples)
+        val geoPoints = segments.flatten()
         val markers =
             stays.map { stay ->
                 MapStayMarker(
@@ -169,9 +194,15 @@ class DayDetailViewModel(
             title = formatTitle(dateKey),
             stopCount = stays.size,
             entries = ordered,
-            trackPoints = geoPoints,
+            trackSegments = segments,
+            timeRange =
+                if (startMs != null && endMs != null) {
+                    "${formatTime(startMs, zone)} – ${formatTime(endMs, zone)}"
+                } else {
+                    ""
+                },
             stayMarkers = markers,
-            accessibilitySummary = buildAccessibilitySummary(geoPoints, stays),
+            accessibilitySummary = buildAccessibilitySummary(geoPoints, stays, segments.size),
             loading = false,
         )
     }
@@ -187,13 +218,16 @@ class DayDetailViewModel(
     private fun buildAccessibilitySummary(
         points: List<GeoPoint>,
         stays: List<StaySegmentEntity>,
+        segmentCount: Int,
     ): String {
         if (points.isEmpty()) return ""
-        return if (stays.isEmpty()) {
-            "轨迹地图，共 ${points.size} 个采样点"
-        } else {
-            "轨迹地图，${stays.size} 处停留，共 ${points.size} 个采样点"
+        val parts = mutableListOf("轨迹地图")
+        parts += "${stays.size} 处停留"
+        parts += "${points.size} 个采样点"
+        if (segmentCount > 1) {
+            parts += "分为 $segmentCount 段"
         }
+        return parts.joinToString("，")
     }
 
     private fun kindOrder(kind: TimelineKind): Int =

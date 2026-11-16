@@ -58,9 +58,16 @@ object TrackExport {
                         val wgs = toWgs84(exported.point)
                         "[${num(wgs.longitude)},${num(wgs.latitude)}]"
                     }
+                // 附带每个点的时间戳：坐标本身无法反映采样是否连续，
+                // 排查「轨迹为什么断了」时必须看时间。
+                val times =
+                    day.points.joinToString(",") { exported ->
+                        "\"${iso(exported.timestampMs)}\""
+                    }
                 features +=
                     """{"type":"Feature","properties":{"date":"${day.dateKey}",""" +
-                    """"kind":"track","pointCount":${day.points.size}},""" +
+                    """"kind":"track","pointCount":${day.points.size},""" +
+                    """"times":[$times]},""" +
                     """"geometry":{"type":"LineString","coordinates":[$coordinates]}}"""
             }
 

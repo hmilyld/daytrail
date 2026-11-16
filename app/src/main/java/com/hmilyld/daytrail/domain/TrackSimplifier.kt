@@ -1,7 +1,6 @@
 package com.hmilyld.daytrail.domain
 
 import com.hmilyld.daytrail.core.GeoPoint
-import com.hmilyld.daytrail.core.distanceMeters
 
 /**
  * 轨迹抽稀（Douglas-Peucker）。
@@ -98,35 +97,5 @@ object TrackSimplifier {
         val dx = px - t * ex
         val dy = py - t * ey
         return kotlin.math.sqrt(dx * dx + dy * dy)
-    }
-
-    /**
-     * 按累计距离切分断点。
-     *
-     * 断点两侧的点不应该连成一条直线——那是数据缺失，
-     * 画成直线会让用户以为真的走了那条路。
-     */
-    fun splitByGaps(
-        points: List<GeoPoint>,
-        maxGapMeters: Double = 2_000.0,
-    ): List<List<GeoPoint>> {
-        if (points.isEmpty()) return emptyList()
-        if (points.size == 1) return listOf(points)
-
-        val segments = mutableListOf<List<GeoPoint>>()
-        var current = mutableListOf(points.first())
-
-        for (index in 1 until points.size) {
-            val previous = points[index - 1]
-            val point = points[index]
-            if (distanceMeters(previous, point) > maxGapMeters) {
-                segments += current
-                current = mutableListOf(point)
-            } else {
-                current += point
-            }
-        }
-        if (current.isNotEmpty()) segments += current
-        return segments
     }
 }

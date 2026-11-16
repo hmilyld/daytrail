@@ -113,7 +113,7 @@ private fun TodayContent(
             )
             TrackOverlay(
                 amap = amap,
-                points = state.trackPoints,
+                segments = state.trackSegments,
                 stays = state.stayMarkers,
                 polylineColor = polylineColor,
                 // 今日页不自动缩放：录制中轨迹每分钟更新，

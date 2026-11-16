@@ -115,49 +115,4 @@ class TrackSimplifierTest {
         assertEquals(points.first(), simplified.first())
         assertEquals(points.last(), simplified.last())
     }
-
-    @Test
-    fun `split by gaps separates distant segments`() {
-        // 第一段 3 个点，然后跳到 10 公里外再来 3 个点
-        val points =
-            listOf(
-                point(0.0, 0.0),
-                point(100.0, 0.0),
-                point(200.0, 0.0),
-                point(10_000.0, 0.0),
-                point(10_100.0, 0.0),
-                point(10_200.0, 0.0),
-            )
-
-        val segments = TrackSimplifier.splitByGaps(points, maxGapMeters = 2_000.0)
-
-        assertEquals(2, segments.size)
-        assertEquals(3, segments[0].size)
-        assertEquals(3, segments[1].size)
-    }
-
-    @Test
-    fun `split by gaps keeps single segment when continuous`() {
-        val points = (0..5).map { point(it * 100.0) }
-
-        val segments = TrackSimplifier.splitByGaps(points, maxGapMeters = 2_000.0)
-
-        assertEquals(1, segments.size)
-        assertEquals(6, segments[0].size)
-    }
-
-    @Test
-    fun `split by gaps handles single point`() {
-        val points = listOf(point(0.0))
-
-        val segments = TrackSimplifier.splitByGaps(points)
-
-        assertEquals(1, segments.size)
-        assertEquals(1, segments[0].size)
-    }
-
-    @Test
-    fun `split by gaps handles empty input`() {
-        assertTrue(TrackSimplifier.splitByGaps(emptyList()).isEmpty())
-    }
 }

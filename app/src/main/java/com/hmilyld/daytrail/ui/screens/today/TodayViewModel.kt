@@ -10,6 +10,8 @@ import com.hmilyld.daytrail.data.prefs.RecordingState
 import com.hmilyld.daytrail.data.prefs.SettingsStore
 import com.hmilyld.daytrail.data.repo.TrackRepository
 import com.hmilyld.daytrail.data.repo.todayKey
+import com.hmilyld.daytrail.domain.TrackPointSample
+import com.hmilyld.daytrail.domain.TrackSegmenter
 import com.hmilyld.daytrail.location.LocationFailureReason
 import com.hmilyld.daytrail.location.RecordingStateHolder
 import com.hmilyld.daytrail.ui.components.map.MapStayMarker
@@ -27,7 +29,7 @@ data class TodayUiState(
     val stopCount: Int = 0,
     val pointCount: Int = 0,
     /** 地图折线用的坐标。 */
-    val trackPoints: List<GeoPoint> = emptyList(),
+    val trackSegments: List<List<GeoPoint>> = emptyList(),
     /** 地图停留标记。 */
     val stayMarkers: List<MapStayMarker> = emptyList(),
     /** 地图的文字版概要，供 TalkBack 使用。 */
@@ -70,8 +72,18 @@ class TodayViewModel(
                     ),
                 stopCount = stays.size,
                 pointCount = points.size,
-                // 关键：把真实坐标传给地图，录制过程中才能画出轨迹
-                trackPoints = points.map { GeoPoint(it.latitude, it.longitude) },
+                // 关键：把真实坐标传给地图，录制过程中才能画出轨迹。
+                // 用时间 + 位移切段：省电档点间距常有 2–5 公里，按距离切会碎成虚线。
+                trackSegments =
+                    TrackSegmenter.segment(
+                        points.map { entity ->
+                            TrackPointSample(
+                                timestampMs = entity.timestampMs,
+                                point = GeoPoint(entity.latitude, entity.longitude),
+                                accuracyMeters = entity.accuracyMeters,
+                            )
+                        },
+                    ),
                 stayMarkers =
                     stays.map { stay ->
                         MapStayMarker(
