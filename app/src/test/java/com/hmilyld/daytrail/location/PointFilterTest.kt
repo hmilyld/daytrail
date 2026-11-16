@@ -45,13 +45,20 @@ class PointFilterTest {
 
     @Test
     fun `poor accuracy is rejected`() {
-        val verdict = filter.judge(null, sample(accuracy = 150f))
+        // 阈值 200 米：更差的点会让里程明显虚高
+        val verdict = filter.judge(null, sample(accuracy = 250f))
         assertEquals(FilterVerdict.Reject(RejectReason.POOR_ACCURACY), verdict)
     }
 
     @Test
     fun `accuracy at boundary is accepted`() {
-        assertTrue(filter.judge(null, sample(accuracy = 100f)) is FilterVerdict.Accept)
+        assertTrue(filter.judge(null, sample(accuracy = 200f)) is FilterVerdict.Accept)
+    }
+
+    @Test
+    fun `coarse location accuracy is accepted`() {
+        // 基站定位常见精度 150 米，必须接受，否则室内几乎采不到点
+        assertTrue(filter.judge(null, sample(accuracy = 150f)) is FilterVerdict.Accept)
     }
 
     @Test

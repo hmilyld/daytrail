@@ -21,6 +21,16 @@ interface TrackPointDao {
     @Query("SELECT * FROM track_point WHERE day_key = :dayKey ORDER BY ts ASC")
     suspend fun pointsOfDay(dayKey: String): List<TrackPointEntity>
 
+    /**
+     * 观察某天的全部原始点，用于录制过程中实时绘制轨迹。
+     *
+     * 每次批量写入后 Room 会重新发出整个列表。
+     * 一天的典型量级是 150–500 个点，重发成本可接受；
+     * 而采样间隔是分钟级，刷新频率很低，不会造成抖动。
+     */
+    @Query("SELECT * FROM track_point WHERE day_key = :dayKey ORDER BY ts ASC")
+    fun observePointsOfDay(dayKey: String): Flow<List<TrackPointEntity>>
+
     /** 观察某天的点数变化，用于今日页实时刷新。 */
     @Query("SELECT COUNT(*) FROM track_point WHERE day_key = :dayKey")
     fun observePointCount(dayKey: String): Flow<Int>

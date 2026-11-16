@@ -2,6 +2,7 @@ package com.hmilyld.daytrail
 
 import android.content.Context
 import com.hmilyld.daytrail.data.db.DayTrailDatabase
+import com.hmilyld.daytrail.data.export.ExportManager
 import com.hmilyld.daytrail.data.prefs.SettingsStore
 import com.hmilyld.daytrail.data.repo.LocalTrackRepository
 import com.hmilyld.daytrail.data.repo.NoOpSyncGateway
@@ -32,4 +33,7 @@ class AppContainer(
 
     /** 云端接缝 ②：当前为空实现，二期替换即可。 */
     val syncGateway: SyncGateway = NoOpSyncGateway()
+
+    /** 数据导出。用 SAF 让用户选择保存位置，不需要存储权限。 */
+    val exportManager: ExportManager by lazy { ExportManager(appContext, trackRepository) }
 }

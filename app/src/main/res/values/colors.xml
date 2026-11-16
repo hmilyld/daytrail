@@ -2,5 +2,4 @@
 <resources>
     <!-- 浅色主题下的窗口底色，深色值在 values-night 覆盖 -->
     <color name="window_background">#F5F7FA</color>
-    <color name="window_background_dark">#12151A</color>
 </resources>

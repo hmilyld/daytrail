@@ -208,7 +208,6 @@ private fun NavHost(
                         dateKey = key.dateKey,
                         container = container,
                         onBack = { backStack.removeLastOrNull() },
-                        onOpenTrip = { tripId -> backStack.add(Destination.TripDetail(tripId)) },
                     )
                 }
                 entry<Destination.TripDetail> { key ->

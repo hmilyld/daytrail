@@ -51,10 +51,15 @@ enum class RejectReason {
  * 3. 再查精度——精度差时速度推算也不可信
  * 4. 最后查跳变与重复
  *
- * 阈值取产品决策的省电档：粗定位为主，100m 精度是可接受的上限。
+ * 精度阈值取 200 米：
+ * - 静止态用的是基站/WiFi 粗定位，精度常在 100–500 米
+ * - 若沿用 100 米，室内或弱 GPS 环境下会几乎采不到点，
+ *   用户看到的是「走了半小时但轨迹是空的」
+ * - 200 米是「城市尺度仍可用」的上限：再差的点会让相邻段
+ *   产生 200 米以上的误差，里程会明显虚高
  */
 class PointFilter(
-    private val maxAccuracyMeters: Float = 100f,
+    private val maxAccuracyMeters: Float = 200f,
     private val maxSpeedMps: Double = 300_000.0 / 3600.0, // 300 km/h
     private val duplicateRadiusMeters: Double = 3.0,
     private val duplicateWindowMs: Long = 30_000L,

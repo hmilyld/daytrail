@@ -46,6 +46,7 @@ import com.hmilyld.daytrail.R
 import com.hmilyld.daytrail.data.prefs.RecordingState
 import com.hmilyld.daytrail.location.RecordingService
 import com.hmilyld.daytrail.ui.appViewModelFactory
+import com.hmilyld.daytrail.ui.components.MapAccessibilityOverlay
 import com.hmilyld.daytrail.ui.components.StatBlock
 import com.hmilyld.daytrail.ui.components.map.AmapView
 import com.hmilyld.daytrail.ui.components.map.CurrentLocationMarker
@@ -111,6 +112,9 @@ private fun TodayContent(
                 points = state.trackPoints,
                 stays = state.stayMarkers,
                 polylineColor = polylineColor,
+                // 今日页不自动缩放：录制中轨迹每分钟更新，
+                // 缩放会把用户拖动的地图反复拽回
+                autoFit = false,
             )
         } else {
             MapUnavailablePlaceholder(modifier = Modifier.fillMaxSize())
@@ -133,6 +137,24 @@ private fun TodayContent(
                     Modifier
                         .align(Alignment.TopEnd)
                         .padding(12.dp),
+            )
+        }
+
+        // 地图的文字版概要：折线对读屏不可用，必须给等价信息
+        MapAccessibilityOverlay(
+            text = state.accessibilitySummary,
+            modifier =
+                Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = 12.dp, bottom = 220.dp),
+        )
+
+        // 空状态：未开始记录且没有数据时给一句提示，避免一片空地
+        if (state.pointCount == 0 && state.recordingState == RecordingState.IDLE) {
+            EmptyHintCard(
+                title = stringResource(R.string.today_empty_title),
+                body = stringResource(R.string.today_empty_body),
+                modifier = Modifier.align(Alignment.Center),
             )
         }
 
@@ -199,6 +221,39 @@ private fun RecordingPill(
                 Text(text = "·", style = MaterialTheme.typography.labelLarge)
                 Text(text = duration, style = MaterialTheme.typography.labelLarge)
             }
+        }
+    }
+}
+
+/** 空状态提示卡片。悬浮在地图中央，不遮挡底部控制区。 */
+@Composable
+private fun EmptyHintCard(
+    title: String,
+    body: String,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.94f),
+        shape = MaterialTheme.shapes.medium,
+        shadowElevation = 4.dp,
+        modifier = modifier.padding(horizontal = 32.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = body,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
         }
     }
 }

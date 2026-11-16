@@ -15,9 +15,13 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -25,6 +29,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -34,6 +39,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.hmilyld.daytrail.AppContainer
 import com.hmilyld.daytrail.R
+import com.hmilyld.daytrail.core.DistanceFormat
 import com.hmilyld.daytrail.ui.appViewModelFactory
 import com.hmilyld.daytrail.ui.components.EmptyState
 import com.hmilyld.daytrail.ui.theme.DayTrailTheme
@@ -56,6 +62,8 @@ fun HistoryScreen(
     HistoryContent(
         state = state,
         onOpenDay = onOpenDay,
+        onPreviousMonth = viewModel::previousMonth,
+        onNextMonth = viewModel::nextMonth,
         modifier = modifier,
     )
 }
@@ -64,6 +72,8 @@ fun HistoryScreen(
 private fun HistoryContent(
     state: HistoryUiState,
     onOpenDay: (String) -> Unit,
+    onPreviousMonth: () -> Unit,
+    onNextMonth: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxSize()) {
@@ -72,17 +82,56 @@ private fun HistoryContent(
             modifier = Modifier.fillMaxWidth(),
         ) {
             Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
-                Text(
-                    text = stringResource(R.string.history_title),
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Text(
-                    text = "${state.year} 年 ${state.month} 月",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 2.dp),
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.history_title),
+                            style = MaterialTheme.typography.headlineSmall,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            text =
+                                stringResource(
+                                    R.string.history_month_label,
+                                    state.year,
+                                    state.month,
+                                ),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 2.dp),
+                        )
+                    }
+                    // 月份切换：早期版本月历写死在当月，旧数据永远看不到
+                    IconButton(onClick = onPreviousMonth) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowLeft,
+                            contentDescription = stringResource(R.string.history_previous_month),
+                        )
+                    }
+                    IconButton(onClick = onNextMonth, enabled = state.canGoNext) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                            contentDescription = stringResource(R.string.history_next_month),
+                        )
+                    }
+                }
+
+                if (state.monthTotalKm > 0.0) {
+                    Text(
+                        text =
+                            stringResource(
+                                R.string.history_month_total,
+                                DistanceFormat.kilometers(state.monthTotalKm * 1000.0),
+                            ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+
                 MonthHeatmap(
                     year = state.year,
                     month = state.month,
@@ -148,14 +197,16 @@ private fun MonthHeatmap(
                 repeat(7) { col ->
                     val index = row * 7 + col
                     val dayIndex = index - leading
+                    // null 表示不在本月范围内（月初前或月末后），用透明格
                     val km = monthlyKm.getOrNull(dayIndex)
+                    val level = if (km == null) EMPTY_CELL else HistoryViewModel.heatLevelOf(km)
                     Box(
                         modifier =
                             Modifier
                                 .weight(1f)
                                 .aspectRatio(1f)
                                 .background(
-                                    color = heatColor(HistoryViewModel.heatLevelOf(km ?: -1.0)),
+                                    color = heatColor(level),
                                     shape = MaterialTheme.shapes.extraSmall,
                                 ),
                     )
@@ -165,17 +216,20 @@ private fun MonthHeatmap(
     }
 }
 
-/** 超出范围的格子（首日之前、月末之后）用透明，避免误以为是「零里程」。 */
+/** 超出本月范围的格子（首日之前、月末之后）用透明，避免误以为是「零里程」。 */
 @Composable
 private fun heatColor(level: Int) =
     when (level) {
-        -1 -> MaterialTheme.colorScheme.surface
+        EMPTY_CELL -> Color.Transparent
         0 -> MaterialTheme.colorScheme.surfaceContainerHigh
         1 -> MaterialTheme.colorScheme.primaryContainer
         2 -> MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
         3 -> MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
         else -> MaterialTheme.colorScheme.primary
     }
+
+/** 非本月格子的哨兵值。 */
+private const val EMPTY_CELL = -1
 
 @Composable
 private fun HeatLegend(modifier: Modifier = Modifier) {
@@ -295,6 +349,8 @@ private fun HistoryEmptyPreview() {
         HistoryContent(
             state = HistoryUiState(year = 2026, month = 11),
             onOpenDay = {},
+            onPreviousMonth = {},
+            onNextMonth = {},
         )
     }
 }
@@ -314,8 +370,12 @@ private fun HistoryListPreview() {
                             DayCard("2026-11-14", "11月14日", 86.2, 4),
                             DayCard("2026-11-13", "11月13日", 41.7, 3),
                         ),
+                    canGoNext = true,
+                    monthTotalKm = 127.9,
                 ),
             onOpenDay = {},
+            onPreviousMonth = {},
+            onNextMonth = {},
         )
     }
 }

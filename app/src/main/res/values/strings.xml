@@ -11,10 +11,8 @@
     <string name="action_back">返回</string>
     <string name="action_confirm">确定</string>
     <string name="action_cancel">取消</string>
-    <string name="action_retry">重试</string>
 
     <!-- 今日 -->
-    <string name="today_title">今天</string>
     <string name="today_stat_distance">公里</string>
     <string name="today_stat_duration">时长</string>
     <string name="today_stat_stops">停留</string>
@@ -29,13 +27,16 @@
 
     <!-- 历史 -->
     <string name="history_title">历史</string>
+    <string name="history_month_label">%1$d 年 %2$d 月</string>
+    <string name="history_month_total">本月共 %1$s km</string>
+    <string name="history_previous_month">上个月</string>
+    <string name="history_next_month">下个月</string>
     <string name="history_empty_title">这个月还没有记录</string>
     <string name="history_empty_body">记录过几天之后，这里会按月显示每天的里程。</string>
     <string name="history_legend_less">少</string>
     <string name="history_legend_more">多</string>
 
     <!-- 单日详情 -->
-    <string name="day_detail_title">当天详情</string>
 
     <!-- 行程 -->
     <string name="trip_title">行程</string>
@@ -50,8 +51,6 @@
     <string name="settings_theme_system">跟随系统</string>
     <string name="settings_theme_light">浅色</string>
     <string name="settings_theme_dark">深色</string>
-    <string name="settings_sampling_tier">采样档位</string>
-    <string name="settings_sampling_tier_desc">省电优先：静止 10 分 / 步行 3 分 / 驾车 1 分</string>
     <string name="settings_tier_power_saver">省电优先 · 静止 10 分 / 步行 3 分 / 驾车 1 分</string>
     <string name="settings_tier_balanced">平衡 · 静止 5 分 / 步行 90 秒 / 驾车 45 秒</string>
     <string name="settings_tier_high_accuracy">高精度 · 静止 2 分 / 步行 30 秒 / 驾车 15 秒</string>
@@ -67,6 +66,17 @@
     <string name="settings_export_desc">GeoJSON 与 GPX，可导进其他地图</string>
     <string name="settings_storage">数据占用</string>
     <string name="settings_version">版本</string>
+
+    <!-- 导出 -->
+    <string name="export_choose_format">选择导出格式</string>
+    <string name="export_format_hint">坐标会转换为国际标准的 WGS-84，可直接导入 Google Earth、Garmin、两步路等工具。</string>
+    <string name="export_geojson_title">GeoJSON</string>
+    <string name="export_geojson_desc">通用地理数据格式，适合程序处理</string>
+    <string name="export_gpx_title">GPX</string>
+    <string name="export_gpx_desc">运动与户外设备通用，含时间与停留点</string>
+    <string name="export_success">已导出 %1$d 天、%2$d 个点</string>
+    <string name="export_empty">还没有可导出的数据</string>
+    <string name="export_failed">导出失败：%1$s</string>
 
     <!-- 地图 -->
     <string name="map_locate_current">回到当前位置</string>
@@ -107,7 +117,6 @@
     <string name="onboarding_action_grant">授权</string>
     <string name="onboarding_action_open_settings">去设置</string>
     <string name="onboarding_action_open_notification_settings">通知设置</string>
-    <string name="onboarding_action_done">已完成</string>
     <string name="onboarding_action_finish">开始使用</string>
     <string name="onboarding_action_skip">稍后再说</string>
     <string name="onboarding_granted">已授权</string>
@@ -115,8 +124,6 @@
     <string name="onboarding_location_required_hint">位置权限未授予，开始后无法记录任何轨迹。</string>
 
     <!-- 无障碍 -->
-    <string name="cd_map">轨迹地图</string>
-    <string name="cd_recording_indicator">正在记录</string>
 
     <!-- 地图不可用 -->
     <string name="map_unavailable_title">地图无法在此设备显示</string>
@@ -135,18 +142,10 @@
 
     <!-- 历史与详情 -->
     <string name="day_detail_empty">这一天还没有轨迹</string>
-    <string name="day_detail_summary">%1$s · %2$s · %3$d 处停留</string>
-    <string name="timeline_gap_title">数据缺失</string>
-    <string name="timeline_gap_detail">约 %1$d 分钟无数据</string>
-    <string name="timeline_stay_detail">停留 %1$d 分钟</string>
-    <string name="timeline_start">开始记录</string>
-    <string name="timeline_end">结束记录</string>
     <string name="history_distance_km">%1$s km</string>
-    <string name="history_stops">%1$d 处停留</string>
 
     <!-- 设置补充 -->
     <string name="settings_storage_points">%1$d 个采样点</string>
-    <string name="settings_clear_day">清除这一天的数据</string>
     <string name="settings_clear_all">清除全部数据</string>
     <string name="settings_clear_confirm_title">确认清除？</string>
     <string name="settings_clear_confirm_body">清除后无法恢复，且不会同步到任何地方。</string>

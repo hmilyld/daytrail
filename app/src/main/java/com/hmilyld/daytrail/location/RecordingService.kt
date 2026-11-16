@@ -8,7 +8,6 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
-import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -17,12 +16,14 @@ import com.hmilyld.daytrail.MainActivity
 import com.hmilyld.daytrail.R
 import com.hmilyld.daytrail.data.prefs.RecordingState
 import com.hmilyld.daytrail.data.prefs.SamplingTier
+import com.hmilyld.daytrail.data.repo.todayKey
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 
@@ -122,12 +123,19 @@ class RecordingService : Service() {
     private fun startRecording() {
         if (loopJob?.isActive == true) return
 
-        startedAtMs = System.currentTimeMillis()
-        appContainer.recordingState.update(RecordingState.RECORDING)
-        startForegroundCompat(buildNotification("开始记录"))
+        startForegroundCompat(buildNotification(getString(R.string.record_starting)))
 
         loopJob =
             scope.launch {
+                // 从当天的汇总恢复计数与起始时间：
+                // 服务被系统杀掉后 START_STICKY 重启时，内存里的计数已经丢失，
+                // 不恢复的话通知会突兀地从「0 分钟 0 个点」重新开始。
+                val today = todayKey()
+                val day = appContainer.trackRepository.observeDay(today).first()
+                startedAtMs = day?.startedAt ?: System.currentTimeMillis()
+                acceptedCount = day?.pointCount ?: 0
+
+                appContainer.recordingState.update(RecordingState.RECORDING)
                 recorder.restoreLastPoint()
                 recorder.startAutoFlush()
                 runSamplingLoop()
@@ -354,15 +362,12 @@ class RecordingService : Service() {
     }
 
     private fun startForegroundCompat(notification: Notification) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION,
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
-        }
+        // minSdk 31，foregroundServiceType 参数一定可用，无需版本分支
+        startForeground(
+            NOTIFICATION_ID,
+            notification,
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION,
+        )
     }
 
     private fun createNotificationChannel() {

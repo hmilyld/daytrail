@@ -1,11 +1,16 @@
 package com.hmilyld.daytrail.ui.screens.settings
 
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -18,6 +23,7 @@ import androidx.compose.material.icons.outlined.BatterySaver
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.IosShare
 import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.outlined.MyLocation
 import androidx.compose.material.icons.outlined.Notifications
@@ -44,6 +50,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -58,12 +65,15 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.hmilyld.daytrail.AppContainer
 import com.hmilyld.daytrail.R
+import com.hmilyld.daytrail.data.export.ExportFormat
+import com.hmilyld.daytrail.data.export.ExportResult
 import com.hmilyld.daytrail.data.prefs.SamplingTier
 import com.hmilyld.daytrail.data.prefs.ThemeMode
 import com.hmilyld.daytrail.permission.Permissions
 import com.hmilyld.daytrail.ui.appViewModelFactory
 import com.hmilyld.daytrail.ui.screens.permission.PermissionHealthSummary
 import com.hmilyld.daytrail.ui.theme.DayTrailTheme
+import kotlinx.coroutines.launch
 
 /**
  * 设置页。
@@ -86,6 +96,51 @@ fun SettingsScreen(
     val viewModel: SettingsViewModel = viewModel(factory = appViewModelFactory(container))
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    var showExportDialog by rememberSaveable { mutableStateOf(false) }
+
+    // 在组合期解析文案：LocalContext.getString 不是配置感知的，
+    // 语言或字体缩放变化时可能返回过期值（lint 会报错）。
+    val exportSuccessTemplate = stringResource(R.string.export_success)
+    val exportEmptyText = stringResource(R.string.export_empty)
+    val exportFailedTemplate = stringResource(R.string.export_failed)
+
+    /** 导出结果反馈。用 Toast 而不是 Snackbar：设置页没有 Scaffold 宿主，最省事。 */
+    fun report(result: ExportResult) {
+        val message =
+            when (result) {
+                is ExportResult.Success ->
+                    String.format(
+                        exportSuccessTemplate,
+                        result.dayCount,
+                        result.pointCount,
+                    )
+                ExportResult.Empty -> exportEmptyText
+                is ExportResult.Failure -> String.format(exportFailedTemplate, result.message)
+            }
+        Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+    }
+
+    fun runExport(
+        uri: android.net.Uri,
+        format: ExportFormat,
+    ) {
+        scope.launch {
+            report(container.exportManager.export(uri, format))
+        }
+    }
+
+    // 两种格式各一个 launcher：CreateDocument 的 MIME 类型在创建时固定
+    val geojsonLauncher =
+        rememberLauncherForActivityResult(
+            ActivityResultContracts.CreateDocument("application/geo+json"),
+        ) { uri -> uri?.let { runExport(it, ExportFormat.GEOJSON) } }
+
+    val gpxLauncher =
+        rememberLauncherForActivityResult(
+            ActivityResultContracts.CreateDocument("application/gpx+xml"),
+        ) { uri -> uri?.let { runExport(it, ExportFormat.GPX) } }
 
     SettingsContent(
         state = state,
@@ -97,8 +152,102 @@ fun SettingsScreen(
         onOpenLocationSettings = { Permissions.openAppSettings(context) },
         onOpenNotificationSettings = { Permissions.openNotificationSettings(context) },
         onOpenBatterySettings = { Permissions.requestIgnoreBatteryOptimizations(context) },
+        onExportClick = { showExportDialog = true },
         modifier = modifier,
     )
+
+    if (showExportDialog) {
+        ExportFormatDialog(
+            onDismiss = { showExportDialog = false },
+            onPick = { format ->
+                showExportDialog = false
+                val today =
+                    java.time.LocalDate
+                        .now()
+                        .toString()
+                val name = "daytrail-$today.${format.extension}"
+                when (format) {
+                    ExportFormat.GEOJSON -> geojsonLauncher.launch(name)
+                    ExportFormat.GPX -> gpxLauncher.launch(name)
+                }
+            },
+        )
+    }
+}
+
+/** 选择导出格式。 */
+@Composable
+private fun ExportFormatDialog(
+    onDismiss: () -> Unit,
+    onPick: (ExportFormat) -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(imageVector = Icons.Outlined.IosShare, contentDescription = null) },
+        title = { Text(text = stringResource(R.string.export_choose_format)) },
+        text = {
+            Column {
+                Text(
+                    text = stringResource(R.string.export_format_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                ExportFormatRow(
+                    title = stringResource(R.string.export_geojson_title),
+                    subtitle = stringResource(R.string.export_geojson_desc),
+                    onClick = { onPick(ExportFormat.GEOJSON) },
+                )
+                ExportFormatRow(
+                    title = stringResource(R.string.export_gpx_title),
+                    subtitle = stringResource(R.string.export_gpx_desc),
+                    onClick = { onPick(ExportFormat.GPX) },
+                )
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = stringResource(R.string.action_cancel))
+            }
+        },
+    )
+}
+
+@Composable
+private fun ExportFormatRow(
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clickable(role = Role.Button, onClick = onClick)
+                .heightIn(min = 56.dp)
+                .padding(vertical = 8.dp),
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Icon(
+            imageVector = Icons.AutoMirrored.Outlined.ArrowForwardIos,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(16.dp),
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -113,6 +262,7 @@ private fun SettingsContent(
     onOpenLocationSettings: () -> Unit,
     onOpenNotificationSettings: () -> Unit,
     onOpenBatterySettings: () -> Unit,
+    onExportClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var showClearDialog by rememberSaveable { mutableStateOf(false) }
@@ -198,6 +348,12 @@ private fun SettingsContent(
 
                     // ---- 数据 ----
                     SettingsSection(title = stringResource(R.string.settings_section_data)) {
+                        SettingsNavRow(
+                            icon = Icons.Outlined.IosShare,
+                            title = stringResource(R.string.settings_export),
+                            subtitle = stringResource(R.string.settings_export_desc),
+                            onClick = onExportClick,
+                        )
                         SettingsInfoRow(
                             icon = Icons.Outlined.Storage,
                             title = stringResource(R.string.settings_storage),
@@ -503,6 +659,7 @@ private fun SettingsLightPreview() {
             onOpenLocationSettings = {},
             onOpenNotificationSettings = {},
             onOpenBatterySettings = {},
+            onExportClick = {},
         )
     }
 }
@@ -526,6 +683,7 @@ private fun SettingsDarkPreview() {
             onOpenLocationSettings = {},
             onOpenNotificationSettings = {},
             onOpenBatterySettings = {},
+            onExportClick = {},
         )
     }
 }

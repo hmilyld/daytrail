@@ -31,6 +31,15 @@ interface TrackRepository {
     /** 某天全部原始点，按时间升序。 */
     suspend fun pointsOfDay(dayKey: DayKey): List<TrackPointEntity>
 
+    /**
+     * 观察某天的原始点，录制中实时绘制轨迹用。
+     *
+     * 这是今日页能看到自己走过的路的前提。
+     * 若不提供这个流，ViewModel 只能拿到一次快照，
+     * 录制过程中地图上不会出现新的轨迹。
+     */
+    fun observePoints(dayKey: DayKey): Flow<List<TrackPointEntity>>
+
     /** 某天的停留段。 */
     suspend fun staysOfDay(dayKey: DayKey): List<StaySegmentEntity>
 

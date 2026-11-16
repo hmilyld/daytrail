@@ -27,6 +27,18 @@ class DayTrailApplication : Application() {
         container = AppContainer(this)
     }
 
+    /**
+     * 进程正常终止时释放地图。
+     *
+     * 注意：真实设备上 `onTerminate` 几乎不会被调用（进程被系统直接杀掉），
+     * 所以这里只是兜底。地图实例随进程结束由系统回收，不会泄漏。
+     */
+    override fun onTerminate() {
+        com.hmilyld.daytrail.ui.components.map.MapViewCache
+            .destroy()
+        super.onTerminate()
+    }
+
     /** 供 Composable 之外的地方读取容器（如前台服务）。 */
     val settingsStore: SettingsStore
         get() = container.settingsStore

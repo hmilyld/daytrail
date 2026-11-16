@@ -35,6 +35,8 @@ private class FakeTrackRepository : TrackRepository {
 
     override suspend fun pointsOfDay(dayKey: DayKey): List<TrackPointEntity> = emptyList()
 
+    override fun observePoints(dayKey: DayKey): Flow<List<TrackPointEntity>> = flowOf(emptyList())
+
     override suspend fun staysOfDay(dayKey: DayKey): List<StaySegmentEntity> = emptyList()
 
     override fun observeStays(dayKey: DayKey): Flow<List<StaySegmentEntity>> = flowOf(emptyList())

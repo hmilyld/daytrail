@@ -23,7 +23,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -48,6 +47,7 @@ import com.hmilyld.daytrail.AppContainer
 import com.hmilyld.daytrail.R
 import com.hmilyld.daytrail.ui.appViewModelFactory
 import com.hmilyld.daytrail.ui.components.EmptyState
+import com.hmilyld.daytrail.ui.components.MapAccessibilityOverlay
 import com.hmilyld.daytrail.ui.components.map.AmapView
 import com.hmilyld.daytrail.ui.components.map.MapUnavailablePlaceholder
 import com.hmilyld.daytrail.ui.components.map.TrackOverlay
@@ -67,7 +67,6 @@ fun DayDetailScreen(
     dateKey: String,
     container: AppContainer,
     onBack: () -> Unit,
-    onOpenTrip: (Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val viewModel: DayDetailViewModel = viewModel(factory = appViewModelFactory(container))
@@ -151,6 +150,8 @@ private fun DayDetailContent(
                         points = state.trackPoints,
                         stays = state.stayMarkers,
                         polylineColor = polylineColor,
+                        // 单日详情：按日期缩一次，看全整条轨迹
+                        fitKey = state.dateKey,
                     )
                     // 文字版行程：地图对读屏不可用，必须提供等价信息
                     MapAccessibilitySummary(
@@ -194,23 +195,7 @@ private fun MapAccessibilitySummary(
     text: String,
     modifier: Modifier = Modifier,
 ) {
-    if (text.isBlank()) return
-
-    Surface(
-        color = MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.88f),
-        contentColor = MaterialTheme.colorScheme.inverseOnSurface,
-        shape = MaterialTheme.shapes.small,
-        modifier =
-            modifier.clearAndSetSemantics {
-                contentDescription = text
-            },
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.labelSmall,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-        )
-    }
+    MapAccessibilityOverlay(text = text, modifier = modifier)
 }
 
 @Composable

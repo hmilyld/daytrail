@@ -29,6 +29,8 @@ data class TodayUiState(
     val trackPoints: List<GeoPoint> = emptyList(),
     /** 地图停留标记。 */
     val stayMarkers: List<MapStayMarker> = emptyList(),
+    /** 地图的文字版概要，供 TalkBack 使用。 */
+    val accessibilitySummary: String = "",
 )
 
 /**
@@ -37,8 +39,8 @@ data class TodayUiState(
  * 数据流：Room 的 Flow → 界面状态。用 Flow 而不是一次性读取，
  * 这样采集服务写入后界面会自动刷新，不需要手动触发。
  *
- * 轨迹点不能直接订阅 Room 的全量查询：每写入一批点都会触发一次查询，
- * 一天几百个点时会造成明显抖动。这里只在点数变化时按需读取。
+ * 轨迹点直接订阅 Room：采样间隔是分钟级、刷盘是 60 秒一次，
+ * 刷新频率很低，一天的几百个点重发一次成本可接受。
  */
 class TodayViewModel(
     private val repository: TrackRepository,
@@ -51,7 +53,7 @@ class TodayViewModel(
         combine(
             recordingState.state,
             repository.observeDay(dayKey),
-            repository.observePointCount(dayKey),
+            repository.observePoints(dayKey),
             repository.observeStays(dayKey),
         ) { state, day, points, stays ->
             TodayUiState(
@@ -63,8 +65,9 @@ class TodayViewModel(
                         ((day?.movingMillis ?: 0L) + (day?.stoppedMillis ?: 0L)) / 1000,
                     ),
                 stopCount = stays.size,
-                pointCount = points,
-                trackPoints = emptyList(),
+                pointCount = points.size,
+                // 关键：把真实坐标传给地图，录制过程中才能画出轨迹
+                trackPoints = points.map { GeoPoint(it.latitude, it.longitude) },
                 stayMarkers =
                     stays.map { stay ->
                         MapStayMarker(
@@ -72,6 +75,14 @@ class TodayViewModel(
                             label = null,
                             durationMinutes = (stay.endMs - stay.startMs) / 60_000,
                         )
+                    },
+                accessibilitySummary =
+                    if (points.isEmpty()) {
+                        ""
+                    } else if (stays.isEmpty()) {
+                        "轨迹地图，今日共 ${points.size} 个采样点"
+                    } else {
+                        "轨迹地图，今日 ${stays.size} 处停留，共 ${points.size} 个采样点"
                     },
             )
         }.stateIn(

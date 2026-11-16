@@ -92,6 +92,9 @@ class LocalTrackRepository(
     override suspend fun pointsOfDay(dayKey: DayKey): List<TrackPointEntity> =
         pointDao.pointsOfDay(dayKey.value)
 
+    override fun observePoints(dayKey: DayKey): Flow<List<TrackPointEntity>> =
+        pointDao.observePointsOfDay(dayKey.value)
+
     override suspend fun staysOfDay(dayKey: DayKey): List<StaySegmentEntity> =
         stayDao.ofDay(dayKey.value)
 

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -143,3 +144,34 @@ fun MergeForAccessibility(
 /** 供 Preview 与占位使用的示例文案，避免页面里散落硬编码中文。 */
 @Composable
 internal fun placeholderEmptyBody(): String = stringResource(R.string.today_empty_body)
+
+/**
+ * 地图的文字版概要。
+ *
+ * 地图折线对 TalkBack 完全不可用——读屏只会念一堆坐标。
+ * 这里给出一句等价描述，并用 `clearAndSetSemantics` 合并成单个节点，
+ * 避免读屏逐个念地图上的标记。
+ */
+@Composable
+fun MapAccessibilityOverlay(
+    text: String,
+    modifier: Modifier = Modifier,
+) {
+    if (text.isBlank()) return
+
+    Surface(
+        color = MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.88f),
+        contentColor = MaterialTheme.colorScheme.inverseOnSurface,
+        shape = MaterialTheme.shapes.small,
+        modifier =
+            modifier.clearAndSetSemantics {
+                contentDescription = text
+            },
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+        )
+    }
+}

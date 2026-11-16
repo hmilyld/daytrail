@@ -4,8 +4,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import com.amap.api.maps.AMap
 import com.amap.api.maps.CameraUpdateFactory
 import com.amap.api.maps.model.BitmapDescriptorFactory
@@ -42,6 +44,16 @@ fun TrackOverlay(
     points: List<GeoPoint>,
     stays: List<MapStayMarker>,
     polylineColor: Int,
+    /**
+     * 是否自动缩放镜头以看全轨迹。
+     *
+     * 今日页必须传 false：录制中轨迹每 60 秒更新一次，
+     * 若每次都缩放镜头，用户拖动地图会被反复拽回，体验很糟。
+     * 单日详情传 true，并配合 [fitKey] 保证每天只缩一次。
+     */
+    autoFit: Boolean = true,
+    /** 自动缩放的去重键。换天时传新的日期键才会重新缩放。 */
+    fitKey: Any? = null,
 ) {
     val currentAmap by rememberUpdatedState(amap)
 
@@ -54,6 +66,9 @@ fun TrackOverlay(
     DisposableEffect(overlay) {
         onDispose { overlay.clear() }
     }
+
+    // 已经缩放过的键。避免轨迹更新时反复抢镜头。
+    var fittedKey by remember { mutableStateOf<Any?>(null) }
 
     LaunchedEffect(currentAmap, points, stays) {
         val map = currentAmap ?: return@LaunchedEffect
@@ -110,8 +125,13 @@ fun TrackOverlay(
                 )
         }
 
-        // 缩放到轨迹范围
-        fitBounds(map, points)
+        // 缩放到轨迹范围。
+        // 只在一个「键」第一次出现时缩一次：今日页传 autoFit=false 完全不缩，
+        // 单日详情按日期键缩一次，之后用户拖动地图不会被拽回。
+        if (autoFit && fittedKey != fitKey) {
+            fitBounds(map, points)
+            fittedKey = fitKey
+        }
     }
 }
 
