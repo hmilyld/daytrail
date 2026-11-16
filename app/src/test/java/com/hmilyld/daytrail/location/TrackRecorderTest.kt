@@ -138,7 +138,7 @@ class TrackRecorderTest {
                     LocationFix(
                         timestampMs = 1_794_672_000_000L,
                         point = base,
-                        accuracyMeters = 500f,
+                        accuracyMeters = 6000f,
                         speedMps = null,
                         bearingDegrees = null,
                         isMock = false,

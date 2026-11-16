@@ -32,6 +32,10 @@ class TrackRecorder(
     private var pendingDayKeys = mutableSetOf<DayKey>()
     private var autoFlushJob: Job? = null
 
+    /** 最近一次点位被拒绝的原因。仅用于日志排查。 */
+    var lastRejectReason: RejectReason? = null
+        private set
+
     /** 已接受但还没写入的点数，供通知展示。 */
     val bufferedCount: Int get() = buffer.size
 
@@ -41,7 +45,8 @@ class TrackRecorder(
      * 坐标统一转成 GCJ-02 再入库：高德来源本身就是 GCJ-02，
      * 系统定位来源是 WGS-84，不转换会让轨迹偏移 50–500 米。
      *
-     * @return 是否被接受。被拒绝的点不会进缓冲，也不影响 [lastAccepted]
+     * @return 是否被接受。被拒绝的点不会进缓冲，也不影响 [lastAccepted]。
+     *   拒绝原因记录在 [lastRejectReason]，便于日志排查。
      */
     suspend fun offer(fix: LocationFix): Boolean {
         if (fix.errorCode != 0) return false
@@ -67,7 +72,11 @@ class TrackRecorder(
             )
 
         val verdict = filter.judge(lastAccepted, sample)
-        if (verdict is FilterVerdict.Reject) return false
+        if (verdict is FilterVerdict.Reject) {
+            lastRejectReason = verdict.reason
+            return false
+        }
+        lastRejectReason = null
 
         lastAccepted = sample
         val dayKey = DayKeys.of(sample.timestampMs)

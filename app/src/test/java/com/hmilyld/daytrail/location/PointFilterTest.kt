@@ -46,13 +46,13 @@ class PointFilterTest {
     @Test
     fun `poor accuracy is rejected`() {
         // 阈值 200 米：更差的点会让里程明显虚高
-        val verdict = filter.judge(null, sample(accuracy = 250f))
+        val verdict = filter.judge(null, sample(accuracy = 6000f))
         assertEquals(FilterVerdict.Reject(RejectReason.POOR_ACCURACY), verdict)
     }
 
     @Test
     fun `accuracy at boundary is accepted`() {
-        assertTrue(filter.judge(null, sample(accuracy = 200f)) is FilterVerdict.Accept)
+        assertTrue(filter.judge(null, sample(accuracy = 5000f)) is FilterVerdict.Accept)
     }
 
     @Test
@@ -62,13 +62,49 @@ class PointFilterTest {
     }
 
     @Test
+    fun `very coarse accuracy is still accepted`() {
+        // 地下车库、地铁里只有基站定位，精度 500–900 米也要记下来：
+        // 用户要的是「大概去了哪」，不是精确轨迹
+        assertTrue(filter.judge(null, sample(accuracy = 3000f)) is FilterVerdict.Accept)
+    }
+
+    @Test
+    fun `movement smaller than accuracy is treated as noise`() {
+        // 位移 50 米但精度 300 米：分不清真的动了还是信号漂移
+        val previous = sample(metersNorth = 0.0, secondsLater = 0, accuracy = 300f)
+        val candidate = sample(metersNorth = 50.0, secondsLater = 60, accuracy = 300f)
+
+        val verdict = filter.judge(previous, candidate)
+
+        assertEquals(FilterVerdict.Reject(RejectReason.WITHIN_NOISE), verdict)
+    }
+
+    @Test
+    fun `movement larger than accuracy is accepted`() {
+        // 位移 500 米、精度 300 米：可以确认真的移动了
+        val previous = sample(metersNorth = 0.0, secondsLater = 0, accuracy = 300f)
+        val candidate = sample(metersNorth = 500.0, secondsLater = 300, accuracy = 300f)
+
+        assertTrue(filter.judge(previous, candidate) is FilterVerdict.Accept)
+    }
+
+    @Test
+    fun `stationary heartbeat is kept even within noise`() {
+        // 静止不动时按心跳间隔保留一个点，否则界面会长时间显示「0 个点」
+        val previous = sample(metersNorth = 0.0, secondsLater = 0, accuracy = 300f)
+        val candidate = sample(metersNorth = 5.0, secondsLater = 11 * 60, accuracy = 300f)
+
+        assertTrue(filter.judge(previous, candidate) is FilterVerdict.Accept)
+    }
+
+    @Test
     fun `duplicate point within window is rejected`() {
         val previous = sample(metersNorth = 0.0, secondsLater = 0)
         val candidate = sample(metersNorth = 1.0, secondsLater = 10)
 
         val verdict = filter.judge(previous, candidate)
 
-        assertEquals(FilterVerdict.Reject(RejectReason.DUPLICATE), verdict)
+        assertEquals(FilterVerdict.Reject(RejectReason.WITHIN_NOISE), verdict)
     }
 
     @Test

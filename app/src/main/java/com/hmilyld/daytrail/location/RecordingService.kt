@@ -51,8 +51,6 @@ class RecordingService : Service() {
     private var loopJob: Job? = null
     private var currentState = MovementState.WALKING
     private var lastFix: LocationFix? = null
-    private var acceptedCount = 0
-    private var startedAtMs = 0L
 
     /** 本会话是否已切到系统定位。 */
     private var useSystemSource = false
@@ -137,14 +135,6 @@ class RecordingService : Service() {
 
         loopJob =
             scope.launch {
-                // 从当天的汇总恢复计数与起始时间：
-                // 服务被系统杀掉后 START_STICKY 重启时，内存里的计数已经丢失，
-                // 不恢复的话通知会突兀地从「0 分钟 0 个点」重新开始。
-                val today = todayKey()
-                val day = appContainer.trackRepository.observeDay(today).first()
-                startedAtMs = day?.startedAt ?: System.currentTimeMillis()
-                acceptedCount = day?.pointCount ?: 0
-
                 appContainer.recordingState.update(RecordingState.RECORDING)
                 recorder.restoreLastPoint()
                 recorder.startAutoFlush()
@@ -214,30 +204,40 @@ class RecordingService : Service() {
                     firstFix = !hasEverSampled,
                 )
 
-            val accepted = fix != null && fix.errorCode == 0 && recordFix(fix)
+            val hasLocation = fix != null && fix.errorCode == 0
 
-            if (accepted) {
+            if (hasLocation) {
+                // 拿到位置就算采集成功——哪怕这个点因为精度低被过滤器丢掉。
+                // 「定位失败」和「点位没有信息量」是两件事，混为一谈会导致
+                // 室内（只有基站定位）时误判为失败并停止记录。
                 hasEverSampled = true
                 failureBudget.recordSuccess()
-                // 必须重新计算：recordFix 里可能已经把状态从 WALKING 改成 DRIVING，
-                // 沿用循环开头算的间隔会慢一拍
+
+                val stored = recordFix(fix)
+                if (!stored) {
+                    Log.d(
+                        TAG,
+                        "点位被过滤（原因=${recorder.lastRejectReason}" +
+                            " 精度=${fix.accuracyMeters}m），继续按间隔采样",
+                    )
+                }
+
+                // 必须重新计算：recordFix 里可能已经把状态从 WALKING 改成 DRIVING
                 val nextInterval = samplingPolicy.intervalFor(currentState) ?: 0L
-                Log.d(TAG, "采样成功，等待 ${nextInterval / 1000}s，状态=$currentState")
+                Log.d(TAG, "采样完成，等待 ${nextInterval / 1000}s，状态=$currentState")
                 delay(nextInterval)
             } else {
-                // 失败时不能等完整间隔：步行档是 3 分钟，
-                // 用户会觉得「点了开始记录没反应」。改用短间隔重试。
+                // 完全没有拿到位置，才是真正的失败
                 val reason = detectFailureReason(fix?.errorCode)
                 val exhausted = failureBudget.recordFailure()
                 Log.d(
                     TAG,
-                    "本轮未采到点（reason=$reason error=${fix?.errorCode}），" +
+                    "本轮未取得位置（reason=$reason error=${fix?.errorCode}），" +
                         "第 ${failureBudget.consecutiveFailures} 次失败",
                 )
 
                 if (exhausted) {
                     // 放弃采集：继续重试只会持续唤醒 GPS，纯耗电且没有意义。
-                    // 交给界面与通知明确告知原因，等用户处理。
                     enterLocationIssue(reason)
                     return
                 }
@@ -256,7 +256,8 @@ class RecordingService : Service() {
      */
     private fun detectFailureReason(lastErrorCode: Int?): LocationFailureReason =
         when {
-            !Permissions.hasFineLocation(this) -> LocationFailureReason.PERMISSION_DENIED
+            // 大致位置也够用，只有完全没权限才算失败
+            !Permissions.hasAnyLocation(this) -> LocationFailureReason.PERMISSION_DENIED
             !Permissions.isLocationServiceEnabled(this) -> LocationFailureReason.LOCATION_DISABLED
             !systemSource.hasAnyProvider() -> LocationFailureReason.LOCATION_DISABLED
             lastErrorCode == null -> LocationFailureReason.NO_FIX
@@ -291,10 +292,7 @@ class RecordingService : Service() {
 
         val accepted = recorder.offer(fix)
         if (accepted) {
-            acceptedCount++
             updateNotification()
-        } else {
-            Log.d(TAG, "定位结果被过滤器丢弃（精度 ${fix.accuracyMeters}m）")
         }
         return accepted
     }
@@ -360,11 +358,23 @@ class RecordingService : Service() {
 
     // ---- 通知 ----
 
-    private fun updateNotification() {
-        val elapsed = (System.currentTimeMillis() - startedAtMs) / 1000
+    /**
+     * 刷新通知文案。
+     *
+     * 用当天的「累积移动 + 静止时长」而不是「距离首个点过了多久」：
+     * 后者会把两次记录之间的空档也算进去——早上记完、傍晚再记，
+     * 通知会显示「已记录 8 小时」，明显不对。
+     *
+     * 数据来自 `track_day`，由日汇总在每次刷盘时更新，
+     * 所以最长滞后 60 秒，对通知来说可以接受。
+     */
+    private suspend fun updateNotification() {
+        val day = appContainer.trackRepository.observeDay(todayKey()).first()
+        val minutes = ((day?.movingMillis ?: 0L) + (day?.stoppedMillis ?: 0L)) / 60_000
+        val points = day?.pointCount ?: 0
         notify(
             buildNotification(
-                getString(R.string.record_elapsed, elapsed / 60, acceptedCount),
+                getString(R.string.record_elapsed, minutes, points),
             ),
         )
     }

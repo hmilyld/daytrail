@@ -38,7 +38,14 @@ class LocalTrackRepository(
 
     override suspend fun recomputeDay(dayKey: DayKey) {
         val entities = pointDao.pointsOfDay(dayKey.value)
-        val samples = entities.map { TrackPointSample(it.timestampMs, it.toGeoPoint()) }
+        val samples =
+            entities.map {
+                TrackPointSample(
+                    timestampMs = it.timestampMs,
+                    point = it.toGeoPoint(),
+                    accuracyMeters = it.accuracyMeters,
+                )
+            }
 
         val stats = DayAggregator.aggregate(samples)
         dayDao.upsert(

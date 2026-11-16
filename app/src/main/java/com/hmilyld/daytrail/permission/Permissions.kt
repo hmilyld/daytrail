@@ -43,7 +43,28 @@ object Permissions {
     /** 通知权限。Android 13+ 才是运行时权限。 */
     val NOTIFICATION: String = Manifest.permission.POST_NOTIFICATIONS
 
-    /** 是否已授予精确位置。这是记录轨迹的最低要求。 */
+    /**
+     * 判断权限是否足够采集。
+     *
+     * **大致位置（COARSE）就够**：本应用记录的是大概行程，
+     * 不要求精确轨迹。把 COARSE 当成「无权限」是错的——
+     * 用户在系统弹窗里选了「大致位置」，我们就该用它继续记录。
+     */
+    fun hasAnyLocation(context: Context): Boolean {
+        val fine =
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.ACCESS_FINE_LOCATION,
+            ) == PackageManager.PERMISSION_GRANTED
+        val coarse =
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.ACCESS_COARSE_LOCATION,
+            ) == PackageManager.PERMISSION_GRANTED
+        return fine || coarse
+    }
+
+    /** 是否已授予精确位置。用于提示「可以更准」，不作为记录的前置条件。 */
     fun hasFineLocation(context: Context): Boolean =
         ContextCompat.checkSelfPermission(
             context,

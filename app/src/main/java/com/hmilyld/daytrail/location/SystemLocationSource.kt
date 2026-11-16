@@ -6,6 +6,7 @@ import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Looper
+import android.util.Log
 import com.hmilyld.daytrail.core.GeoPoint
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
@@ -121,8 +122,13 @@ class SystemLocationSource(
                         }
                     listener = currentListener
 
-                    runCatching {
-                        providers.forEach { provider ->
+                    // 逐个 provider 独立注册，单个失败不影响其他。
+                    // 早期用一个 runCatching 包住整个 forEach：没有精确权限时
+                    // GPS 注册抛异常，循环直接中断，网络定位永远不会被注册，
+                    // 于是「只有大致位置」的用户一个点都采不到。
+                    var registered = false
+                    providers.forEach { provider ->
+                        runCatching {
                             lm.requestLocationUpdates(
                                 provider,
                                 0L,
@@ -130,12 +136,13 @@ class SystemLocationSource(
                                 currentListener,
                                 Looper.getMainLooper(),
                             )
-                        }
-                    }.onFailure {
-                        if (!delivered) {
-                            delivered = true
-                            continuation.resumeWith(Result.success(null))
-                        }
+                        }.onSuccess { registered = true }
+                            .onFailure { Log.d(TAG, "注册 $provider 失败：${it.message}") }
+                    }
+
+                    if (!registered && !delivered) {
+                        delivered = true
+                        continuation.resumeWith(Result.success(null))
                     }
                 }
             }
@@ -195,6 +202,8 @@ class SystemLocationSource(
         )
 
     private companion object {
+        const val TAG = "SystemLocationSource"
+
         /** 缓存位置的过期上限。超过就不再用，宁可这一轮不采。 */
         const val STALE_LIMIT_MS = 10 * 60_000L
 

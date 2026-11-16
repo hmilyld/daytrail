@@ -7,6 +7,13 @@ import com.hmilyld.daytrail.core.distanceMeters
 data class TrackPointSample(
     val timestampMs: Long,
     val point: GeoPoint,
+    /**
+     * 定位精度（米）。用于判断位移是否可信。
+     *
+     * 默认 0 表示「未提供」：视为精确点，不做噪声过滤，
+     * 这样既有测试与调用方不需要改。
+     */
+    val accuracyMeters: Float = 0f,
 )
 
 /** 一天的统计结果。 */
@@ -31,6 +38,14 @@ object DayAggregator {
 
     /** 速度低于该值视为静止（约 1.8 km/h），用于拆分移动/静止时长。 */
     private const val STILL_SPEED_MPS = 0.5
+
+    /**
+     * 计算里程时的最小可信位移（米）。
+     *
+     * 即使两个点都标称 5 米精度，5 米以内的抖动也不该累加，
+     * 否则静止一分钟就能凭空多出几十米。
+     */
+    private const val MIN_DISTANCE_ACCURACY_METERS = 15f
 
     fun aggregate(points: List<TrackPointSample>): DayStats {
         if (points.isEmpty()) {
@@ -65,9 +80,14 @@ object DayAggregator {
             val segmentDistance = distanceMeters(previous.point, current.point)
             val elapsed = current.timestampMs - previous.timestampMs
 
-            // 距离始终累加：长间隔里用户确实移动了，抹掉会少算里程。
-            // 跳变点已由 PointFilter 在入库前挡掉，这里不需要重复防护。
-            if (segmentDistance > 0) {
+            // 只有位移明显超过定位误差时才算真实移动。
+            // 用 2 倍误差作为阈值：静止时相邻两次抖动本身就能差出一个误差距离，
+            // 单倍阈值挡不住，坐着不动也能凭空累积出几公里。
+            val accuracy = maxOf(previous.accuracyMeters, current.accuracyMeters)
+            val threshold =
+                maxOf(MIN_DISTANCE_ACCURACY_METERS, 2f * accuracy).toDouble()
+
+            if (segmentDistance > threshold) {
                 distance += segmentDistance
             }
 
