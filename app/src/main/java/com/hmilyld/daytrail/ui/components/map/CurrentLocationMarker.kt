@@ -14,7 +14,10 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.core.graphics.createBitmap
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.amap.api.maps.AMap
 import com.amap.api.maps.CameraUpdateFactory
 import com.amap.api.maps.model.BitmapDescriptor
@@ -39,8 +42,7 @@ import kotlinx.coroutines.isActive
  * - 记录中：直接跟随 `RecordingService` 的采样点，自己不请求定位。
  *   早期实现每 15 秒单独请求一次高精度定位，既费电，又会出现
  *   「圆点在这一头、轨迹末端在另一头」的错位。
- * - 未记录：地图打开时取一次，之后每 60 秒刷新一次（此时屏幕是亮的，
- *   真正的耗电大头是屏幕本身）。
+ * - 未记录：地图可见时取一次，之后每 60 秒刷新；切到后台立即停。
  */
 @Composable
 fun CurrentLocationMarker(
@@ -107,21 +109,28 @@ fun CurrentLocationMarker(
         currentOnLocation?.invoke(point)
     }
 
-    // 未记录：自己取一次，之后低频刷新
-    LaunchedEffect(currentAmap, recording) {
+    // 未记录：自己取一次，之后低频刷新。
+    //
+    // 必须挂在 RESUMED 上：Compose 的组合在 Activity 停止后依然存在，
+    // LaunchedEffect 不会自己停。实测把应用切到桌面后，这个循环仍然每
+    // 60 秒定位一次，75 秒里有 24 秒处于定位活跃状态——纯浪费。
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(currentAmap, recording, lifecycleOwner) {
         val map = currentAmap ?: return@LaunchedEffect
         if (recording) return@LaunchedEffect
 
-        val source = SystemLocationSource(context)
-        var hasFix = false
-        while (isActive) {
-            val fix = source.requestOnce(highAccuracy = true, timeoutMs = 8_000L)
-            if (fix != null && fix.errorCode == 0) {
-                hasFix = true
-                place(map, fix.toGcj02())
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            val source = SystemLocationSource(context)
+            var hasFix = false
+            while (isActive) {
+                val fix = source.requestOnce(highAccuracy = true, timeoutMs = 8_000L)
+                if (fix != null && fix.errorCode == 0) {
+                    hasFix = true
+                    place(map, fix.toGcj02())
+                }
+                // 还没取到位置时尽快重试，让图标早点出现
+                delay(if (hasFix) IDLE_REFRESH_MS else RETRY_INTERVAL_MS)
             }
-            // 还没取到位置时尽快重试，让图标早点出现
-            delay(if (hasFix) IDLE_REFRESH_MS else RETRY_INTERVAL_MS)
         }
     }
 

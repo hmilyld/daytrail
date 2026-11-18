@@ -1,5 +1,6 @@
 package com.hmilyld.daytrail.location
 
+import android.util.Log
 import com.hmilyld.daytrail.core.CoordinateTransform
 import com.hmilyld.daytrail.core.DayKey
 import com.hmilyld.daytrail.core.DayKeys
@@ -7,10 +8,12 @@ import com.hmilyld.daytrail.data.db.entity.TrackPointEntity
 import com.hmilyld.daytrail.data.repo.TrackRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
@@ -122,17 +125,29 @@ class TrackRecorder(
         mutex.withLock { flushLocked() }
     }
 
-    /** 调用方必须已经持有 [mutex]。 */
+    /**
+     * 调用方必须已经持有 [mutex]。
+     *
+     * 顺序是「先写库，再清缓冲」。反过来的话，写库被取消（停止记录时会
+     * cancel 采样协程）或抛异常时，这批点已经从内存里消失，没有任何地方
+     * 会再补写它们。
+     *
+     * 写库放在 [NonCancellable] 里：取消请求不能在事务中途生效，
+     * 否则可能写进一半。
+     */
     private suspend fun flushLocked() {
         if (buffer.isEmpty()) return
 
         val batch = buffer.toList()
-        buffer.clear()
-
-        repository.appendPoints(batch)
         val days = pendingDayKeys.toSet()
-        pendingDayKeys = mutableSetOf()
-        days.forEach { dayKey -> repository.recomputeDay(dayKey) }
+
+        withContext(NonCancellable) {
+            repository.appendPoints(batch)
+            days.forEach { dayKey -> repository.recomputeDay(dayKey) }
+        }
+
+        buffer.clear()
+        pendingDayKeys -= days
     }
 
     /** 启动定时刷盘。Service 在开始记录时调用一次，重复调用不会叠加循环。 */
@@ -142,7 +157,9 @@ class TrackRecorder(
             scope.launch {
                 while (true) {
                     delay(flushIntervalMs)
+                    // 失败不能静默：缓冲会保留，下一次还会重试，但要有痕迹
                     runCatching { flush() }
+                        .onFailure { Log.w(TAG, "定时刷盘失败，数据留在缓冲里", it) }
                 }
             }
     }
@@ -191,5 +208,9 @@ class TrackRecorder(
         val accepted = offer(fix)
         flush()
         return accepted
+    }
+
+    private companion object {
+        const val TAG = "TrackRecorder"
     }
 }

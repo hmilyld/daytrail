@@ -22,7 +22,14 @@ private class FakeTrackRepository : TrackRepository {
     val recomputed = mutableListOf<DayKey>()
     var lastPointEntity: TrackPointEntity? = null
 
+    /** 置 true 时下一次写入抛异常，用于验证缓冲不会被提前清空。 */
+    var failNextAppend = false
+
     override suspend fun appendPoints(points: List<TrackPointEntity>): Int {
+        if (failNextAppend) {
+            failNextAppend = false
+            throw IllegalStateException("模拟写库失败")
+        }
         inserted += points
         return points.size
     }
@@ -247,6 +254,24 @@ class TrackRecorderTest {
 
             recorder.offer(fix(0.0, 0))
             recorder.finish()
+
+            assertEquals(1, repo.inserted.size)
+            assertEquals(0, recorder.bufferedCount)
+        }
+
+    @Test
+    fun `failed write keeps the points in the buffer`() =
+        runTest {
+            // 先写库、再清缓冲：写库失败时这些点必须还在，否则就永久丢了
+            val repo = FakeTrackRepository().apply { failNextAppend = true }
+            val recorder = TrackRecorder(repo, this)
+
+            recorder.offer(fix(0.0, 0))
+            runCatching { recorder.flush() }
+
+            assertEquals(1, recorder.bufferedCount)
+
+            recorder.flush()
 
             assertEquals(1, repo.inserted.size)
             assertEquals(0, recorder.bufferedCount)
