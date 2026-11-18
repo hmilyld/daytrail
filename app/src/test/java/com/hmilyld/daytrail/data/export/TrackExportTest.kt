@@ -6,6 +6,7 @@ import com.hmilyld.daytrail.core.distanceMeters
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.ZoneId
 
 class TrackExportTest {
     private val shanghai = GeoPoint(31.228458, 121.478223)
@@ -108,6 +109,41 @@ class TrackExportTest {
         val json = TrackExport.toGeoJson(emptyList())
 
         assertTrue(json.contains("\"features\":[]"))
+    }
+
+    @Test
+    fun `geojson writes local time with offset`() {
+        val json = TrackExport.toGeoJson(listOf(day()), ZoneId.of("Asia/Shanghai"))
+
+        assertTrue(
+            "时间应带 +08:00 偏移，而不是 UTC 的 Z",
+            json.contains("\"2026-11-15T00:00:00+08:00\""),
+        )
+    }
+
+    @Test
+    fun `midnight export keeps date and time on the same day`() {
+        val json =
+            TrackExport.toGeoJson(
+                listOf(
+                    day(
+                        dateKey = "2026-11-15",
+                        points = listOf(point(0.0), point(100.0, 30)),
+                    ),
+                ),
+                ZoneId.of("Asia/Shanghai"),
+            )
+
+        // 本地 00:00:30 若写成 UTC 会变成前一天的 16:00:30，日期属性与时间对不上
+        assertTrue(json.contains("\"date\":\"2026-11-15\""))
+        assertTrue(json.contains("\"2026-11-15T00:00:30+08:00\""))
+    }
+
+    @Test
+    fun `gpx writes local time with offset`() {
+        val gpx = TrackExport.toGpx(listOf(day()), ZoneId.of("Asia/Shanghai"))
+
+        assertTrue(gpx.contains("<time>2026-11-15T00:00:00+08:00</time>"))
     }
 
     // ---- GPX ----

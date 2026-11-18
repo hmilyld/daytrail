@@ -37,6 +37,9 @@ import com.hmilyld.daytrail.ui.screens.daydetail.DayDetailScreen
 import com.hmilyld.daytrail.ui.screens.history.HistoryScreen
 import com.hmilyld.daytrail.ui.screens.onboarding.OnboardingScreen
 import com.hmilyld.daytrail.ui.screens.permission.PermissionScreen
+import com.hmilyld.daytrail.ui.screens.places.PlaceDetailScreen
+import com.hmilyld.daytrail.ui.screens.places.PlacePickerScreen
+import com.hmilyld.daytrail.ui.screens.places.PlacesScreen
 import com.hmilyld.daytrail.ui.screens.settings.SettingsScreen
 import com.hmilyld.daytrail.ui.screens.today.TodayScreen
 import com.hmilyld.daytrail.ui.screens.trip.TripDetailScreen
@@ -198,6 +201,30 @@ private fun NavHost(
                         onOpenPermissions = {
                             backStack.add(Destination.Permissions)
                         },
+                        onOpenPlaces = {
+                            backStack.add(Destination.Places)
+                        },
+                    )
+                }
+                entry<Destination.Places> {
+                    PlacesScreen(
+                        container = container,
+                        onBack = { backStack.removeLastOrNull() },
+                        onOpenPlace = { id -> backStack.add(Destination.PlaceDetail(id)) },
+                        onAddPlace = { backStack.add(Destination.PlacePicker) },
+                    )
+                }
+                entry<Destination.PlaceDetail> { key ->
+                    PlaceDetailScreen(
+                        placeId = key.placeId,
+                        container = container,
+                        onBack = { backStack.removeLastOrNull() },
+                    )
+                }
+                entry<Destination.PlacePicker> {
+                    PlacePickerScreen(
+                        container = container,
+                        onBack = { backStack.removeLastOrNull() },
                     )
                 }
                 entry<Destination.Permissions> {

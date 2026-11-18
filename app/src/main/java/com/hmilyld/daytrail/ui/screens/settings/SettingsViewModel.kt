@@ -17,6 +17,7 @@ import kotlinx.coroutines.launch
 data class SettingsUiState(
     val samplingTier: SamplingTier = SamplingTier.POWER_SAVER,
     val learningEnabled: Boolean = true,
+    val autoSleep: Boolean = true,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val pointCount: Int = 0,
 )
@@ -37,12 +38,14 @@ class SettingsViewModel(
         combine(
             settingsStore.samplingTier,
             settingsStore.learningEnabled,
+            settingsStore.autoSleep,
             settingsStore.themeMode,
             pointCount,
-        ) { tier, learning, theme, points ->
+        ) { tier, learning, autoSleep, theme, points ->
             SettingsUiState(
                 samplingTier = tier,
                 learningEnabled = learning,
+                autoSleep = autoSleep,
                 themeMode = theme,
                 pointCount = points,
             )
@@ -62,6 +65,10 @@ class SettingsViewModel(
 
     fun setLearningEnabled(enabled: Boolean) {
         viewModelScope.launch { settingsStore.setLearningEnabled(enabled) }
+    }
+
+    fun setAutoSleep(enabled: Boolean) {
+        viewModelScope.launch { settingsStore.setAutoSleep(enabled) }
     }
 
     fun setThemeMode(mode: ThemeMode) {

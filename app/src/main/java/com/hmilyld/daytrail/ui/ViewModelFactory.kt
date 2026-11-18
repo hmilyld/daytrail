@@ -7,6 +7,8 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.hmilyld.daytrail.AppContainer
 import com.hmilyld.daytrail.ui.screens.daydetail.DayDetailViewModel
 import com.hmilyld.daytrail.ui.screens.history.HistoryViewModel
+import com.hmilyld.daytrail.ui.screens.places.PlaceDetailViewModel
+import com.hmilyld.daytrail.ui.screens.places.PlacesViewModel
 import com.hmilyld.daytrail.ui.screens.settings.SettingsViewModel
 import com.hmilyld.daytrail.ui.screens.today.TodayViewModel
 
@@ -29,7 +31,16 @@ fun appViewModelFactory(container: AppContainer): ViewModelProvider.Factory =
             HistoryViewModel(repository = container.trackRepository)
         }
         initializer {
-            DayDetailViewModel(repository = container.trackRepository)
+            DayDetailViewModel(
+                repository = container.trackRepository,
+                correctionClient = container.grasproadClient,
+            )
+        }
+        initializer {
+            PlacesViewModel(repository = container.trackRepository)
+        }
+        initializer {
+            PlaceDetailViewModel(repository = container.trackRepository)
         }
         initializer {
             SettingsViewModel(

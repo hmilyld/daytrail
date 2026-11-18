@@ -28,6 +28,20 @@ sealed interface Destination : NavKey {
         val dateKey: String,
     ) : Destination
 
+    /** 地点管理。从设置进入。 */
+    @Serializable
+    data object Places : Destination
+
+    /** 地点详情：在地图上标出位置，可改名/删除。 */
+    @Serializable
+    data class PlaceDetail(
+        val placeId: Long,
+    ) : Destination
+
+    /** 地图选点新增地点。 */
+    @Serializable
+    data object PlacePicker : Destination
+
     /** 行程详情 */
     @Serializable
     data class TripDetail(

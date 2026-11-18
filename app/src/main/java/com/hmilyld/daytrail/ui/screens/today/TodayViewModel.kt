@@ -9,6 +9,7 @@ import com.hmilyld.daytrail.core.formatDuration
 import com.hmilyld.daytrail.data.prefs.RecordingState
 import com.hmilyld.daytrail.data.prefs.SettingsStore
 import com.hmilyld.daytrail.data.repo.TrackRepository
+import com.hmilyld.daytrail.data.repo.toStaySegment
 import com.hmilyld.daytrail.data.repo.todayKey
 import com.hmilyld.daytrail.domain.TrackDisplay
 import com.hmilyld.daytrail.domain.TrackPointSample
@@ -17,7 +18,9 @@ import com.hmilyld.daytrail.location.RecordingStateHolder
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 
 /** 今日页的界面状态。 */
 data class TodayUiState(
@@ -49,6 +52,12 @@ data class TodayUiState(
      * 只是要让用户知道「现在没有新数据」，而不是看着不变的数字以为一切正常。
      */
     val fixStale: Boolean = false,
+    /**
+     * 已进入休眠：长时间不动，采样间隔降到 1 小时一次。
+     *
+     * 必须让用户看见，否则「点不再增加」会被当成记录断了。
+     */
+    val sleeping: Boolean = false,
 )
 
 /**
@@ -66,6 +75,18 @@ class TodayViewModel(
     private val recordingState: RecordingStateHolder,
 ) : ViewModel() {
     private val dayKey = todayKey()
+
+    init {
+        // 从 v1 升级上来时历史停留没有地点归属，补一次就够。
+        // 用持久标志而不是「地点表是否为空」：从来没有长停留的用户地点表永远是空的，
+        // 那样每次启动都会把所有日期重算一遍。
+        viewModelScope.launch {
+            if (!settingsStore.placesBackfillDone.first()) {
+                repository.backfillPlaces()
+                settingsStore.setPlacesBackfillDone()
+            }
+        }
+    }
 
     val uiState: StateFlow<TodayUiState> =
         combine(
@@ -87,7 +108,7 @@ class TodayViewModel(
                 stopCount = stays.size,
                 pointCount = points.size,
                 // 关键：把真实坐标传给地图，录制过程中才能画出轨迹。
-                // 精度过滤、毛刺修复、按「时间 + 位移」切段都在 TrackDisplay 里，
+                // 精度过滤、毛刺修复、停留吸附、按「时间 + 位移」切段都在 TrackDisplay 里，
                 // 今日页和单日详情共用同一套，避免两处画出来的线不一样。
                 trackSegments =
                     TrackDisplay.segments(
@@ -98,6 +119,7 @@ class TodayViewModel(
                                 accuracyMeters = entity.accuracyMeters,
                             )
                         },
+                        stays.map { it.toStaySegment() },
                     ),
                 stayMarkers =
                     stays
@@ -116,6 +138,8 @@ class TodayViewModel(
             state.copy(locationIssue = issue)
         }.combine(recordingState.fixStale) { state, stale ->
             state.copy(fixStale = stale)
+        }.combine(recordingState.sleeping) { state, sleeping ->
+            state.copy(sleeping = sleeping)
         }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5_000),

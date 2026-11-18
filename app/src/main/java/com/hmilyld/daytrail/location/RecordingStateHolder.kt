@@ -65,8 +65,19 @@ class RecordingStateHolder {
      */
     val fixStale: StateFlow<Boolean> = _fixStale.asStateFlow()
 
+    private val _sleeping = MutableStateFlow(false)
+
+    /**
+     * 长时间没动，采样间隔已经降到 1 小时一次。
+     *
+     * 这不是「停止记录」：每小时仍有心跳，显著运动一触发就恢复。
+     * 界面必须显示出来，否则用户看到点不再增加会以为记录断了。
+     */
+    val sleeping: StateFlow<Boolean> = _sleeping.asStateFlow()
+
     fun update(newState: RecordingState) {
         _state.value = newState
+        if (newState != RecordingState.RECORDING) _sleeping.value = false
     }
 
     fun setLocationIssue(reason: LocationFailureReason?) {
@@ -79,5 +90,9 @@ class RecordingStateHolder {
 
     fun setFixStale(stale: Boolean) {
         _fixStale.value = stale
+    }
+
+    fun setSleeping(sleeping: Boolean) {
+        _sleeping.value = sleeping
     }
 }

@@ -6,11 +6,16 @@ import com.hmilyld.daytrail.core.DayKeys
 import com.hmilyld.daytrail.core.DistanceFormat
 import com.hmilyld.daytrail.core.GeoPoint
 import com.hmilyld.daytrail.core.formatDuration
+import com.hmilyld.daytrail.data.db.dao.PlaceSummary
 import com.hmilyld.daytrail.data.db.entity.DayGapEntity
 import com.hmilyld.daytrail.data.db.entity.StaySegmentEntity
 import com.hmilyld.daytrail.data.db.entity.TrackDayEntity
 import com.hmilyld.daytrail.data.db.entity.TrackPointEntity
 import com.hmilyld.daytrail.data.repo.TrackRepository
+import com.hmilyld.daytrail.data.repo.toStaySegment
+import com.hmilyld.daytrail.data.route.GrasproadClient
+import com.hmilyld.daytrail.domain.RouteOverride
+import com.hmilyld.daytrail.domain.TrackCorrection
 import com.hmilyld.daytrail.domain.TrackDisplay
 import com.hmilyld.daytrail.domain.TrackPointSample
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -57,6 +62,14 @@ data class DayDetailUiState(
     /** 地图的文字版行程，供 TalkBack 使用。 */
     val accessibilitySummary: String = "",
     val loading: Boolean = true,
+    /** 有没有可补全的驾车段（且已配置 Key）。 */
+    val canCorrectRoute: Boolean = false,
+    /** 正在请求纠偏服务。 */
+    val correctingRoute: Boolean = false,
+    /** 已保存的纠偏结果。非 null 时地图画的是它。 */
+    val routeOverride: RouteOverride? = null,
+    /** 纠偏失败的原因。 */
+    val routeError: String? = null,
 ) {
     val hasTrack: Boolean get() = trackSegments.any { it.size >= 2 }
 }
@@ -70,6 +83,7 @@ data class DayDetailUiState(
  */
 class DayDetailViewModel(
     private val repository: TrackRepository,
+    private val correctionClient: GrasproadClient,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(DayDetailUiState())
     val uiState: StateFlow<DayDetailUiState> = _uiState.asStateFlow()
@@ -99,19 +113,127 @@ class DayDetailViewModel(
                 repository.observeStays(key),
                 repository.observeGaps(key),
                 repository.observeDay(key),
-            ) { points, stays, gaps, day ->
-                buildState(dateKey, points, stays, gaps, day)
-            }.collect { state -> _uiState.value = state }
+                repository.observePlaces(),
+            ) { points, stays, gaps, day, places ->
+                DaySource(points, stays, gaps, day, places)
+            }.combine(repository.observeRoute(key)) { source, route ->
+                buildState(dateKey, source, route)
+            }.collect { state ->
+                // 构建出的状态是「数据侧」的，瞬时状态（正在补全、错误文案）要带过来，
+                // 否则录制中每来一个点就会把「正在补全」刷掉。
+                val transient = _uiState.value
+                _uiState.value =
+                    state.copy(
+                        correctingRoute = transient.correctingRoute,
+                        routeError = transient.routeError,
+                    )
+            }
         }
     }
 
+    /**
+     * 按需纠偏：只在用户点按钮时联网一次。
+     *
+     * 只送最长的一段驾车轨迹。一天里多段驾驶要分多次请求，配额与耗时都不划算，
+     * 而「补一条回家的路」正是这个功能的用途。
+     */
+    fun correctRoute() {
+        val dateKey = loadedKey ?: return
+        if (_uiState.value.correctingRoute) return
+
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(correctingRoute = true, routeError = null)
+
+            val key = DayKeys.parse(dateKey) ?: return@launch
+            val samples =
+                repository.pointsOfDay(key).map { point ->
+                    TrackPointSample(
+                        timestampMs = point.timestampMs,
+                        point = GeoPoint(point.latitude, point.longitude),
+                        accuracyMeters = point.accuracyMeters,
+                    )
+                }
+
+            val run =
+                TrackCorrection.drivingRuns(samples).maxByOrNull { it.size }
+                    ?: run {
+                        _uiState.value =
+                            _uiState.value.copy(
+                                correctingRoute = false,
+                                routeError = "这一天没有可补全的驾车段",
+                            )
+                        return@launch
+                    }
+
+            val collected = mutableListOf<List<GeoPoint>>()
+            var distance = 0.0
+
+            for (chunk in TrackCorrection.chunks(run)) {
+                val corrected =
+                    correctionClient
+                        .correct(TrackCorrection.requestPoints(chunk))
+                        .getOrElse { error ->
+                            _uiState.value =
+                                _uiState.value.copy(
+                                    correctingRoute = false,
+                                    routeError = error.message ?: "补全失败",
+                                )
+                            return@launch
+                        }
+
+                collected += corrected.segments
+                distance += corrected.distanceMeters
+            }
+
+            if (collected.isEmpty()) {
+                _uiState.value =
+                    _uiState.value.copy(
+                        correctingRoute = false,
+                        routeError = "这段轨迹没能匹配到路网",
+                    )
+                return@launch
+            }
+
+            repository.saveRoute(
+                key,
+                RouteOverride(
+                    startMs = run.first().timestampMs,
+                    endMs = run.last().timestampMs,
+                    segments = collected,
+                    distanceMeters = distance,
+                    createdAtMs = System.currentTimeMillis(),
+                ),
+            )
+            _uiState.value = _uiState.value.copy(correctingRoute = false, routeError = null)
+        }
+    }
+
+    /** 还原成原始折线。 */
+    fun restoreRoute() {
+        val dateKey = loadedKey ?: return
+        viewModelScope.launch {
+            DayKeys.parse(dateKey)?.let { repository.clearRoute(it) }
+        }
+    }
+
+    private data class DaySource(
+        val points: List<TrackPointEntity>,
+        val stays: List<StaySegmentEntity>,
+        val gaps: List<DayGapEntity>,
+        val day: TrackDayEntity?,
+        val places: List<PlaceSummary>,
+    )
+
     private fun buildState(
         dateKey: String,
-        points: List<TrackPointEntity>,
-        stays: List<StaySegmentEntity>,
-        gaps: List<DayGapEntity>,
-        day: TrackDayEntity?,
+        source: DaySource,
+        route: RouteOverride?,
     ): DayDetailUiState {
+        val points = source.points
+        val stays = source.stays
+        val gaps = source.gaps
+        val day = source.day
+        val places = source.places
         val zone = ZoneId.systemDefault()
         val entries = mutableListOf<TimelineEntry>()
 
@@ -135,7 +257,7 @@ class DayDetailViewModel(
             entries +=
                 TimelineEntry(
                     time = formatTime(stay.startMs, zone),
-                    title = stay.displayTitle(),
+                    title = stay.displayTitle(places),
                     detail = "停留 ${(stay.endMs - stay.startMs) / 60_000} 分钟",
                     kind = TimelineKind.STOP,
                     sortKeyMs = stay.startMs,
@@ -176,9 +298,15 @@ class DayDetailViewModel(
                     accuracyMeters = point.accuracyMeters,
                 )
             }
-        // 精度筛、毛刺修复、切段都在 TrackDisplay 里做，
+        // 精度筛、毛刺修复、停留吸附、切段都在 TrackDisplay 里做，
         // 与今日页共用同一套，避免两处画出来的线不一样。
-        val segments = TrackDisplay.segments(samples)
+        // 有纠偏结果时只替换驾车时间窗，窗口外仍按原始点画。
+        val segments =
+            TrackDisplay.segments(
+                samples,
+                stays.map { it.toStaySegment() },
+                route,
+            )
         val geoPoints = segments.flatten()
         val markers =
             stays
@@ -205,11 +333,23 @@ class DayDetailViewModel(
             stayMarkers = markers,
             accessibilitySummary = buildAccessibilitySummary(geoPoints, stays, segments.size),
             loading = false,
+            canCorrectRoute =
+                correctionClient.configured &&
+                    TrackCorrection.drivingRuns(samples).isNotEmpty(),
+            routeOverride = route,
         )
     }
 
-    /** 停留点的显示标题。M2-B 接入地点命名后改为返回真实名称。 */
-    private fun StaySegmentEntity.displayTitle(): String = "停留"
+    /**
+     * 停留标题。有地点名就用地点名，比如「家」「公司」。
+     *
+     * 名字来自 place 表，跨天复用：同一天里两段停留只要落在同一个地点，
+     * 标题就一样。
+     */
+    private fun StaySegmentEntity.displayTitle(places: List<PlaceSummary>): String =
+        placeId
+            ?.let { id -> places.firstOrNull { it.place.id == id }?.place?.label }
+            ?: "停留"
 
     /**
      * 地图的文字版行程。

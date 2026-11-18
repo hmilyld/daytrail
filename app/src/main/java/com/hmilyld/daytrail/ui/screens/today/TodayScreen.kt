@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material.icons.outlined.LocationOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -149,7 +150,9 @@ private fun TodayContent(
                     state = state.recordingState,
                     duration = state.duration,
                 )
-                if (state.fixStale && state.recordingState == RecordingState.RECORDING) {
+                if (state.sleeping && state.recordingState == RecordingState.RECORDING) {
+                    SleepingHint()
+                } else if (state.fixStale && state.recordingState == RecordingState.RECORDING) {
                     StaleFixHint()
                 }
             }
@@ -290,6 +293,38 @@ private fun StaleFixHint(modifier: Modifier = Modifier) {
             )
             Text(
                 text = stringResource(R.string.today_fix_stale),
+                style = MaterialTheme.typography.labelMedium,
+            )
+        }
+    }
+}
+
+/**
+ * 休眠提示。
+ *
+ * 与「暂时没有新定位」是两件事：那是在等信号，这是主动降频。
+ * 用中性色而不是琥珀色——休眠是正常且省电的行为，不是异常。
+ */
+@Composable
+private fun SleepingHint(modifier: Modifier = Modifier) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        shape = MaterialTheme.shapes.extraLarge,
+        modifier = modifier,
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Bedtime,
+                contentDescription = null,
+                modifier = Modifier.size(14.dp),
+            )
+            Text(
+                text = stringResource(R.string.today_sleeping_hint),
                 style = MaterialTheme.typography.labelMedium,
             )
         }

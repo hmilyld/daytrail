@@ -14,9 +14,12 @@ import androidx.core.app.NotificationCompat
 import com.hmilyld.daytrail.DayTrailApplication
 import com.hmilyld.daytrail.MainActivity
 import com.hmilyld.daytrail.R
+import com.hmilyld.daytrail.core.GeoPoint
+import com.hmilyld.daytrail.core.distanceMeters
 import com.hmilyld.daytrail.data.prefs.RecordingState
 import com.hmilyld.daytrail.data.prefs.SamplingTier
 import com.hmilyld.daytrail.data.repo.todayKey
+import com.hmilyld.daytrail.domain.PlaceResolver
 import com.hmilyld.daytrail.permission.Permissions
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -62,6 +65,21 @@ class RecordingService : Service() {
     private var loopJob: Job? = null
     private var tierJob: Job? = null
     private var watchdogJob: Job? = null
+    private var placesJob: Job? = null
+    private var sleepSettingJob: Job? = null
+    private var motionJob: Job? = null
+
+    /** 显著运动触发器。设备没有该传感器时只能靠每小时心跳兜底。 */
+    private val motionGate by lazy { MotionGate(this) }
+
+    /**
+     * 已知地点（家、公司）的坐标。
+     *
+     * 只用于一件事：判断「是不是已经到目的地了」，到了就早点进休眠。
+     * 后台持续订阅地点表，用户刚命名完也不需要重启记录。
+     */
+    @Volatile
+    private var knownPlaces: List<GeoPoint> = emptyList()
 
     /**
      * 当前订阅用的间隔。值变化时 [flatMapLatest] 会重新注册，
@@ -132,6 +150,7 @@ class RecordingService : Service() {
         lastNotificationText = null
         appContainer.recordingState.setLocationIssue(null)
         appContainer.recordingState.setFixStale(false)
+        appContainer.recordingState.setSleeping(false)
         appContainer.recordingState.update(RecordingState.RECORDING)
         startForegroundCompat(buildNotification(getString(R.string.record_starting)))
 
@@ -156,6 +175,9 @@ class RecordingService : Service() {
                 applyTier(appContainer.settingsStore.samplingTier.first())
                 sampleInterval.value = tempo.intervalMs
                 observeTierChanges()
+                observePlaces()
+                observeAutoSleep()
+                startMotionWake()
 
                 recorder.restoreLastPoint()
                 recorder.startAutoFlush()
@@ -185,6 +207,60 @@ class RecordingService : Service() {
         tierJob =
             scope.launch {
                 appContainer.settingsStore.samplingTier.collect { applyTier(it) }
+            }
+    }
+
+    /** 地点表变了（新增、改名、删除）时立刻更新本地缓存。 */
+    private fun observePlaces() {
+        placesJob?.cancel()
+        placesJob =
+            scope.launch {
+                appContainer.trackRepository.observePlaces().collect { summaries ->
+                    knownPlaces =
+                        summaries.map { summary ->
+                            GeoPoint(summary.place.latitude, summary.place.longitude)
+                        }
+                }
+            }
+    }
+
+    /** 「自动休眠」开关。关掉之后采样间隔只由速度决定。 */
+    private fun observeAutoSleep() {
+        sleepSettingJob?.cancel()
+        sleepSettingJob =
+            scope.launch {
+                appContainer.settingsStore.autoSleep.collect { enabled ->
+                    tempo.autoSleepEnabled = enabled
+                }
+            }
+    }
+
+    /**
+     * 显著运动唤醒。
+     *
+     * 休眠时采样间隔是 1 小时，**不能只等下一个点**：早上出门的话，
+     * 最坏要一个小时后才知道人已经走了。传感器一响就立刻恢复节奏，
+     * 并主动补一个点，把出门的头几百米补上。
+     */
+    private fun startMotionWake() {
+        motionJob?.cancel()
+        if (!motionGate.available) {
+            Log.d(TAG, "设备没有显著运动传感器，只能靠每小时心跳兜底")
+            return
+        }
+        motionJob =
+            scope.launch {
+                motionGate.events().collect {
+                    if (tempo.tier != TempoTier.SLEEP) return@collect
+                    Log.d(TAG, "显著运动，退出休眠")
+                    tempo.wake()
+                    appContainer.recordingState.setSleeping(false)
+                    sampleInterval.value = tempo.intervalMs
+                    systemSource
+                        .requestOnce(highAccuracy = true, timeoutMs = WAKE_FIX_TIMEOUT_MS)
+                        ?.let { onFix(it) }
+                    sampleInterval.value = tempo.intervalMs
+                }
             }
     }
 
@@ -224,6 +300,12 @@ class RecordingService : Service() {
         tierJob = null
         watchdogJob?.cancel()
         watchdogJob = null
+        placesJob?.cancel()
+        placesJob = null
+        sleepSettingJob?.cancel()
+        sleepSettingJob = null
+        motionJob?.cancel()
+        motionJob = null
     }
 
     // ---- 采样 ----
@@ -274,17 +356,37 @@ class RecordingService : Service() {
 
         val accepted = recorder.offer(fix)
 
+        val insideKnownPlace =
+            knownPlaces.any { place ->
+                distanceMeters(place, point) <= PlaceResolver.MATCH_RADIUS_METERS
+            }
         tempo.observe(
             previous = previousAccepted,
             sample = TempoSample(fix.timestampMs, point),
+            insideKnownPlace = insideKnownPlace,
         )
+        syncSleepState()
 
         // 地图上的位置圆点跟着这条路走，不再自己轮询定位
         appContainer.recordingState.setLastFix(point)
         appContainer.recordingState.setFixStale(false)
 
-        if (accepted) {
+        // 休眠中不要用「已记录 N 分钟」覆盖休眠文案，否则用户看不出它在省电
+        if (accepted && tempo.tier != TempoTier.SLEEP) {
             updateNotification()
+        }
+    }
+
+    /** 休眠状态变化时更新界面与通知。 */
+    private fun syncSleepState() {
+        val sleeping = tempo.tier == TempoTier.SLEEP
+        if (appContainer.recordingState.sleeping.value == sleeping) return
+
+        appContainer.recordingState.setSleeping(sleeping)
+        appContainer.recordingState.setFixStale(false)
+        if (sleeping) {
+            Log.d(TAG, "进入休眠：采样间隔 ${tempo.intervalMs / 60_000} 分钟")
+            notify(getString(R.string.record_sleeping))
         }
     }
 
@@ -301,6 +403,16 @@ class RecordingService : Service() {
             scope.launch {
                 while (isActive) {
                     delay(WATCHDOG_TICK_MS)
+
+                    // 休眠时「很久没有新点位」是预期行为，不是异常：
+                    // 采样间隔本来就是 1 小时。既不能给界面打 fixStale，
+                    // 也不能把通知改成「正在获取定位」——那会把「已休眠」的提示顶掉，
+                    // 而且之后不会再刷回来（休眠中不更新通知）。
+                    if (tempo.tier == TempoTier.SLEEP) {
+                        appContainer.recordingState.setFixStale(false)
+                        continue
+                    }
+
                     val silentMs = System.currentTimeMillis() - lastFixAtMs
                     appContainer.recordingState.setFixStale(silentMs >= STALE_AFTER_MS)
                     if (silentMs >= NO_FIX_NOTICE_MS) {
@@ -443,6 +555,9 @@ class RecordingService : Service() {
 
         /** 订阅中断后的重试间隔。 */
         private const val RESUBSCRIBE_DELAY_MS = 30_000L
+
+        /** 休眠被运动唤醒后，主动补一个点的等待上限。 */
+        private const val WAKE_FIX_TIMEOUT_MS = 20_000L
 
         /** 看门狗轮询间隔。 */
         private const val WATCHDOG_TICK_MS = 60_000L
