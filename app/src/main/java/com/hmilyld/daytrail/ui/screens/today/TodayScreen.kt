@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -27,6 +29,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -452,24 +455,42 @@ private fun StatsSheet(
                         .fillMaxWidth()
                         .padding(horizontal = 20.dp, vertical = 16.dp),
             ) {
-                Row(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     StatBlock(
                         value = state.distanceKm,
-                        unit = stringResource(R.string.today_stat_distance),
-                        label = "",
-                        modifier = Modifier.weight(1f),
+                        unit = stringResource(R.string.today_unit_km),
+                        label = stringResource(R.string.today_stat_distance),
+                        modifier = Modifier.weight(1.25f),
+                        highlight = true,
+                    )
+                    VerticalDivider(
+                        modifier = Modifier.height(40.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant,
                     )
                     StatBlock(
                         value = state.duration,
                         unit = "",
                         label = stringResource(R.string.today_stat_duration),
-                        modifier = Modifier.weight(1f),
+                        modifier =
+                            Modifier
+                                .weight(1f)
+                                .padding(start = 16.dp),
+                    )
+                    VerticalDivider(
+                        modifier = Modifier.height(40.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant,
                     )
                     StatBlock(
                         value = state.stopCount.toString(),
                         unit = "",
                         label = stringResource(R.string.today_stat_stops),
-                        modifier = Modifier.weight(1f),
+                        modifier =
+                            Modifier
+                                .weight(1f)
+                                .padding(start = 16.dp),
                     )
                 }
 
@@ -492,6 +513,9 @@ private fun StatsSheet(
 /** 面板内容的最大宽度。宽屏上内容居中，面板本身仍然铺满整行。 */
 private val CONTENT_MAX_WIDTH = 640.dp
 
+/** 记录控制按钮的最小高度。52dp 高于 Material 默认的 40dp，户外单手更好按。 */
+private val CONTROLS_MIN_HEIGHT = 52.dp
+
 @Composable
 private fun RecordingControls(
     state: RecordingState,
@@ -507,7 +531,10 @@ private fun RecordingControls(
             RecordingState.IDLE ->
                 Button(
                     onClick = onStart,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = CONTROLS_MIN_HEIGHT),
                     contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
                 ) {
                     Icon(
@@ -522,7 +549,10 @@ private fun RecordingControls(
             RecordingState.RECORDING -> {
                 FilledTonalButton(
                     onClick = onPause,
-                    modifier = Modifier.weight(1f),
+                    modifier =
+                        Modifier
+                            .weight(1f)
+                            .heightIn(min = CONTROLS_MIN_HEIGHT),
                 ) {
                     Icon(
                         imageVector = Icons.Filled.Pause,
@@ -534,7 +564,10 @@ private fun RecordingControls(
                 }
                 Button(
                     onClick = onStop,
-                    modifier = Modifier.weight(1f),
+                    modifier =
+                        Modifier
+                            .weight(1f)
+                            .heightIn(min = CONTROLS_MIN_HEIGHT),
                     colors =
                         ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.error,
@@ -554,7 +587,10 @@ private fun RecordingControls(
             RecordingState.PAUSED -> {
                 Button(
                     onClick = onStart,
-                    modifier = Modifier.weight(1f),
+                    modifier =
+                        Modifier
+                            .weight(1f)
+                            .heightIn(min = CONTROLS_MIN_HEIGHT),
                 ) {
                     Icon(
                         imageVector = Icons.Filled.PlayArrow,
@@ -566,7 +602,10 @@ private fun RecordingControls(
                 }
                 FilledTonalButton(
                     onClick = onStop,
-                    modifier = Modifier.weight(1f),
+                    modifier =
+                        Modifier
+                            .weight(1f)
+                            .heightIn(min = CONTROLS_MIN_HEIGHT),
                 ) {
                     Icon(
                         imageVector = Icons.Filled.Stop,

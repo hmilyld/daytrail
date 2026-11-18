@@ -13,9 +13,10 @@
     <string name="action_cancel">取消</string>
 
     <!-- 今日 -->
-    <string name="today_stat_distance">公里</string>
+    <string name="today_stat_distance">里程</string>
     <string name="today_stat_duration">时长</string>
     <string name="today_stat_stops">停留</string>
+    <string name="today_unit_km">km</string>
     <string name="today_recording">记录中</string>
     <string name="today_paused">已暂停</string>
     <string name="today_idle">未开始</string>
@@ -28,7 +29,8 @@
     <!-- 历史 -->
     <string name="history_title">历史</string>
     <string name="history_month_label">%1$d 年 %2$d 月</string>
-    <string name="history_month_total">本月共 %1$s km</string>
+    <string name="history_month_total_label">本月合计</string>
+    <string name="history_unit_km">km</string>
     <string name="history_previous_month">上个月</string>
     <string name="history_next_month">下个月</string>
     <string name="history_empty_title">这个月还没有记录</string>

@@ -38,8 +38,10 @@ internal object TrailColors {
 
     // 中性色（浅色）
     val SurfaceLight = Color(0xFFF5F7FA)
+    val SurfaceContainerLowestLight = Color(0xFFFFFFFF)
     val SurfaceContainerLight = Color(0xFFFFFFFF)
     val SurfaceContainerHighLight = Color(0xFFEDF0F5)
+    val SurfaceContainerHighestLight = Color(0xFFE4E8EF)
     val OnSurfaceLight = Color(0xFF15171C)
     val OnSurfaceVariantLight = Color(0xFF5A6270)
     val OutlineLight = Color(0xFFE3E7EE)
@@ -47,8 +49,10 @@ internal object TrailColors {
 
     // 中性色（深色）
     val SurfaceDark = Color(0xFF12151A)
+    val SurfaceContainerLowestDark = Color(0xFF0D1014)
     val SurfaceContainerDark = Color(0xFF1A1E25)
     val SurfaceContainerHighDark = Color(0xFF232830)
+    val SurfaceContainerHighestDark = Color(0xFF2B313B)
     val OnSurfaceDark = Color(0xFFE7EAEF)
     val OnSurfaceVariantDark = Color(0xFF9AA2AF)
     val OutlineDark = Color(0xFF2E3440)

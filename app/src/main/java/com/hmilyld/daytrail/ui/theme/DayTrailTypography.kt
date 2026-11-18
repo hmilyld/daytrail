@@ -16,9 +16,9 @@ internal val DayTrailTypography =
             TextStyle(
                 fontFamily = FontFamily.Default,
                 fontWeight = FontWeight.SemiBold,
-                fontSize = 34.sp,
-                lineHeight = 42.sp,
-                letterSpacing = (-0.5).sp,
+                fontSize = 36.sp,
+                lineHeight = 44.sp,
+                letterSpacing = (-0.6).sp,
             ),
         headlineMedium =
             TextStyle(
@@ -39,8 +39,8 @@ internal val DayTrailTypography =
             TextStyle(
                 fontFamily = FontFamily.Default,
                 fontWeight = FontWeight.SemiBold,
-                fontSize = 19.sp,
-                lineHeight = 26.sp,
+                fontSize = 20.sp,
+                lineHeight = 28.sp,
             ),
         titleMedium =
             TextStyle(
