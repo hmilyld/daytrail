@@ -11,14 +11,13 @@ enum class LocationFailureReason {
     /** 没有定位权限（精确或大致都没有）。 */
     PERMISSION_DENIED,
 
-    /** 系统定位开关被关掉，或没有任何启用的 provider。 */
+    /**
+     * 系统定位开关被关掉，或没有任何启用的 provider。
+     *
+     * 「信号差」不在这里：那不是用户要处理的问题，采集会继续等，
+     * 界面用 `fixStale` 单独提示。
+     */
     LOCATION_DISABLED,
-
-    /** 权限与开关都正常，但始终取不到位置。现在只用来说明，不停止采集。 */
-    NO_FIX,
-
-    /** 未知原因。 */
-    UNKNOWN,
 }
 
 /**

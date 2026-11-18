@@ -144,8 +144,6 @@
     <!-- 定位异常 -->
     <string name="location_issue_permission">定位权限未授予，已暂停采集。请到设置里开启「精确位置」。</string>
     <string name="location_issue_disabled">系统定位开关已关闭，已暂停采集。请打开位置信息后重试。</string>
-    <string name="location_issue_no_fix">暂时取不到位置，仍在按间隔尝试。换个开阔处会更准。</string>
-    <string name="location_issue_unknown">定位异常，已暂停采集。请稍后重试。</string>
     <string name="action_retry">重试</string>
 
     <!-- 历史与详情 -->

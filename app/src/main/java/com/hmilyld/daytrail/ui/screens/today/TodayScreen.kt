@@ -314,10 +314,6 @@ private fun LocationIssueBanner(
                 stringResource(R.string.location_issue_permission)
             LocationFailureReason.LOCATION_DISABLED ->
                 stringResource(R.string.location_issue_disabled)
-            LocationFailureReason.NO_FIX ->
-                stringResource(R.string.location_issue_no_fix)
-            LocationFailureReason.UNKNOWN ->
-                stringResource(R.string.location_issue_unknown)
         }
 
     Surface(

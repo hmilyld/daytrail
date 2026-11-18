@@ -28,6 +28,13 @@ data class LocationFix(
     val speedMps: Float?,
     val bearingDegrees: Float?,
     val isMock: Boolean,
+    /**
+     * 定位错误码。0 表示成功。
+     *
+     * 系统定位（目前唯一的实现）不会产生错误码——它拿不到位置时直接不回调。
+     * 保留这个字段是为了端口的完整性：将来接入厂商 SDK 时，错误码往往是
+     * 它唯一能给的失败信息。因此写入前的 `errorCode != 0` 判断不要删。
+     */
     val errorCode: Int = 0,
     /** 该坐标的坐标系。入库前必须转成 GCJ-02。 */
     val coordinateSystem: CoordinateSystem = CoordinateSystem.GCJ02,

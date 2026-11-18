@@ -1,4 +1,4 @@
-#!/usr/bin/env pwsh
+﻿#!/usr/bin/env pwsh
 # DayTrail 验收脚本：Debug/Release 构建 + 单测 + lint + 格式化检查。
 #
 # 用法：
