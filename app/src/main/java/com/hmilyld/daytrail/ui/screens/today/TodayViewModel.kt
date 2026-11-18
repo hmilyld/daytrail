@@ -10,11 +10,10 @@ import com.hmilyld.daytrail.data.prefs.RecordingState
 import com.hmilyld.daytrail.data.prefs.SettingsStore
 import com.hmilyld.daytrail.data.repo.TrackRepository
 import com.hmilyld.daytrail.data.repo.todayKey
+import com.hmilyld.daytrail.domain.TrackDisplay
 import com.hmilyld.daytrail.domain.TrackPointSample
-import com.hmilyld.daytrail.domain.TrackSegmenter
 import com.hmilyld.daytrail.location.LocationFailureReason
 import com.hmilyld.daytrail.location.RecordingStateHolder
-import com.hmilyld.daytrail.ui.components.map.MapStayMarker
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -31,11 +30,18 @@ data class TodayUiState(
     /** 地图折线用的坐标。 */
     val trackSegments: List<List<GeoPoint>> = emptyList(),
     /** 地图停留标记。 */
-    val stayMarkers: List<MapStayMarker> = emptyList(),
+    val stayMarkers: List<GeoPoint> = emptyList(),
     /** 地图的文字版概要，供 TalkBack 使用。 */
     val accessibilitySummary: String = "",
     /** 定位异常原因。非 null 表示采集已停止，界面应提示并给重试入口。 */
     val locationIssue: LocationFailureReason? = null,
+    /**
+     * 最近一个采样点（GCJ-02）。
+     *
+     * 记录中地图圆点跟着它走，不再自己每 15 秒请求一次定位——
+     * 那样既费电，也会让圆点和轨迹末端对不上。
+     */
+    val lastFix: GeoPoint? = null,
 )
 
 /**
@@ -57,14 +63,15 @@ class TodayViewModel(
     val uiState: StateFlow<TodayUiState> =
         combine(
             recordingState.state,
+            recordingState.lastFix,
             repository.observeDay(dayKey),
             repository.observePoints(dayKey),
             repository.observeStays(dayKey),
-            recordingState.locationIssue,
-        ) { state, day, points, stays, issue ->
+        ) { state, lastFix, day, points, stays ->
             TodayUiState(
                 dayKey = dayKey,
                 recordingState = state,
+                lastFix = lastFix,
                 distanceKm = formatKm(day?.distanceMeters ?: 0.0),
                 duration =
                     formatDuration(
@@ -73,9 +80,10 @@ class TodayViewModel(
                 stopCount = stays.size,
                 pointCount = points.size,
                 // 关键：把真实坐标传给地图，录制过程中才能画出轨迹。
-                // 用时间 + 位移切段：省电档点间距常有 2–5 公里，按距离切会碎成虚线。
+                // 精度过滤、毛刺修复、按「时间 + 位移」切段都在 TrackDisplay 里，
+                // 今日页和单日详情共用同一套，避免两处画出来的线不一样。
                 trackSegments =
-                    TrackSegmenter.segment(
+                    TrackDisplay.segments(
                         points.map { entity ->
                             TrackPointSample(
                                 timestampMs = entity.timestampMs,
@@ -85,13 +93,9 @@ class TodayViewModel(
                         },
                     ),
                 stayMarkers =
-                    stays.map { stay ->
-                        MapStayMarker(
-                            point = GeoPoint(stay.latitude, stay.longitude),
-                            label = null,
-                            durationMinutes = (stay.endMs - stay.startMs) / 60_000,
-                        )
-                    },
+                    stays
+                        .filter { it.endMs - it.startMs >= TrackDisplay.MIN_STAY_MARKER_MS }
+                        .map { stay -> GeoPoint(stay.latitude, stay.longitude) },
                 accessibilitySummary =
                     if (points.isEmpty()) {
                         ""
@@ -100,8 +104,9 @@ class TodayViewModel(
                     } else {
                         "轨迹地图，今日 ${stays.size} 处停留，共 ${points.size} 个采样点"
                     },
-                locationIssue = issue,
             )
+        }.combine(recordingState.locationIssue) { state, issue ->
+            state.copy(locationIssue = issue)
         }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5_000),

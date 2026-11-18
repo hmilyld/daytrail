@@ -11,7 +11,8 @@ import com.hmilyld.daytrail.data.db.entity.StaySegmentEntity
 import com.hmilyld.daytrail.data.db.entity.TrackDayEntity
 import com.hmilyld.daytrail.data.db.entity.TrackPointEntity
 import com.hmilyld.daytrail.data.repo.TrackRepository
-import com.hmilyld.daytrail.ui.components.map.MapStayMarker
+import com.hmilyld.daytrail.domain.TrackDisplay
+import com.hmilyld.daytrail.domain.TrackPointSample
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -52,7 +53,7 @@ data class DayDetailUiState(
     /** 记录时间跨度，如 `13:24 – 14:38`。让用户一眼看到实际起止。 */
     val timeRange: String = "",
     /** 地图停留标记。 */
-    val stayMarkers: List<MapStayMarker> = emptyList(),
+    val stayMarkers: List<GeoPoint> = emptyList(),
     /** 地图的文字版行程，供 TalkBack 使用。 */
     val accessibilitySummary: String = "",
     val loading: Boolean = true,
@@ -145,8 +146,8 @@ class DayDetailViewModel(
             entries +=
                 TimelineEntry(
                     time = formatTime(gap.startMs, zone),
-                    title = "数据缺失",
-                    detail = "约 ${(gap.endMs - gap.startMs) / 60_000} 分钟无数据",
+                    title = "这段时间没有记录",
+                    detail = "约 ${(gap.endMs - gap.startMs) / 60_000} 分钟没有采样点",
                     kind = TimelineKind.GAP,
                     sortKeyMs = gap.startMs,
                 )
@@ -168,25 +169,21 @@ class DayDetailViewModel(
         val ordered = entries.sortedWith(compareBy({ it.sortKeyMs }, { kindOrder(it.kind) }))
 
         val samples =
-            points.map {
-                com.hmilyld.daytrail.domain.TrackPointSample(
-                    timestampMs = it.timestampMs,
-                    point = GeoPoint(it.latitude, it.longitude),
-                    accuracyMeters = it.accuracyMeters,
+            points.map { point ->
+                TrackPointSample(
+                    timestampMs = point.timestampMs,
+                    point = GeoPoint(point.latitude, point.longitude),
+                    accuracyMeters = point.accuracyMeters,
                 )
             }
-        val segments =
-            com.hmilyld.daytrail.domain.TrackSegmenter
-                .segment(samples)
+        // 精度筛、毛刺修复、切段都在 TrackDisplay 里做，
+        // 与今日页共用同一套，避免两处画出来的线不一样。
+        val segments = TrackDisplay.segments(samples)
         val geoPoints = segments.flatten()
         val markers =
-            stays.map { stay ->
-                MapStayMarker(
-                    point = GeoPoint(stay.latitude, stay.longitude),
-                    label = null,
-                    durationMinutes = (stay.endMs - stay.startMs) / 60_000,
-                )
-            }
+            stays
+                .filter { it.endMs - it.startMs >= TrackDisplay.MIN_STAY_MARKER_MS }
+                .map { stay -> GeoPoint(stay.latitude, stay.longitude) }
 
         return DayDetailUiState(
             dateKey = dateKey,

@@ -110,15 +110,17 @@ private fun TodayContent(
             CurrentLocationMarker(
                 amap = amap,
                 recording = state.recordingState == RecordingState.RECORDING,
+                lastKnownFix = state.lastFix,
             )
             TrackOverlay(
                 amap = amap,
                 segments = state.trackSegments,
                 stays = state.stayMarkers,
                 polylineColor = polylineColor,
-                // 今日页不自动缩放：录制中轨迹每分钟更新，
-                // 缩放会把用户拖动的地图反复拽回
-                autoFit = false,
+                // 录制中不缩放：轨迹每分钟更新，每次缩放都会把用户拖动的地图
+                // 反复拽回。停止记录后再缩一次，让整条轨迹落在屏幕里。
+                autoFit = state.recordingState != RecordingState.RECORDING,
+                fitKey = state.pointCount,
             )
         } else {
             MapUnavailablePlaceholder(modifier = Modifier.fillMaxSize())

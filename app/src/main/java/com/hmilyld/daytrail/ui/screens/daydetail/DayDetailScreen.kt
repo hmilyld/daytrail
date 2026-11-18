@@ -159,6 +159,8 @@ private fun DayDetailContent(
                         polylineColor = polylineColor,
                         // 单日详情：按日期缩一次，看全整条轨迹
                         fitKey = state.dateKey,
+                        // 画出每个采样点，让「每隔几分钟一个点」一眼可见
+                        sampleDots = true,
                     )
                     // 文字版行程：地图对读屏不可用，必须提供等价信息
                     MapAccessibilitySummary(
