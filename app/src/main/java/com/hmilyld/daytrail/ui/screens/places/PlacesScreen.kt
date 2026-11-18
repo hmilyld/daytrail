@@ -1,23 +1,30 @@
 package com.hmilyld.daytrail.ui.screens.places
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Place
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -26,6 +33,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -83,7 +91,7 @@ fun PlacesScreen(
                 Modifier
                     .fillMaxSize()
                     .padding(innerPadding),
-            contentAlignment = Alignment.TopCenter,
+            contentAlignment = if (places.isEmpty()) Alignment.Center else Alignment.TopCenter,
         ) {
             if (places.isEmpty()) {
                 Text(
@@ -94,16 +102,22 @@ fun PlacesScreen(
                 )
             } else {
                 LazyColumn(
-                    // 底部留出 FAB 的高度，否则最后一个地点会被按钮压住
-                    contentPadding = PaddingValues(bottom = 96.dp),
+                    contentPadding =
+                        PaddingValues(
+                            start = 16.dp,
+                            end = 16.dp,
+                            top = 8.dp,
+                            // 底部留出 FAB 的高度，否则最后一个地点会被按钮压住
+                            bottom = 96.dp,
+                        ),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                     modifier = Modifier.widthIn(max = 840.dp),
                 ) {
                     items(places, key = { it.place.id }) { summary ->
-                        PlaceRow(
+                        PlaceCard(
                             summary = summary,
                             onClick = { onOpenPlace(summary.place.id) },
                         )
-                        HorizontalDivider()
                     }
                 }
             }
@@ -112,7 +126,7 @@ fun PlacesScreen(
 }
 
 @Composable
-private fun PlaceRow(
+private fun PlaceCard(
     summary: PlaceSummary,
     onClick: () -> Unit,
 ) {
@@ -127,14 +141,56 @@ private fun PlaceRow(
             stringResource(R.string.places_never_visited)
         }
 
-    ListItem(
-        headlineContent = {
-            Text(summary.place.label ?: stringResource(R.string.places_unnamed))
-        },
-        supportingContent = { Text(supporting) },
-        leadingContent = {
-            Icon(imageVector = Icons.Outlined.Place, contentDescription = null)
-        },
-        modifier = Modifier.clickable(onClick = onClick),
-    )
+    Card(
+        onClick = onClick,
+        colors =
+            CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+            ),
+        shape = MaterialTheme.shapes.medium,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier =
+                    Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Place,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+            Column(
+                modifier =
+                    Modifier
+                        .weight(1f)
+                        .padding(start = 14.dp),
+            ) {
+                Text(
+                    text = summary.place.label ?: stringResource(R.string.places_unnamed),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = supporting,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Icon(
+                imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
 }
