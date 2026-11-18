@@ -1,9 +1,25 @@
 package com.hmilyld.daytrail.location
 
+import com.hmilyld.daytrail.core.GeoPoint
 import com.hmilyld.daytrail.data.prefs.RecordingState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+
+/** 采集无法进行的原因。只在权限或定位开关有问题时出现。 */
+enum class LocationFailureReason {
+    /** 没有定位权限（精确或大致都没有）。 */
+    PERMISSION_DENIED,
+
+    /** 系统定位开关被关掉，或没有任何启用的 provider。 */
+    LOCATION_DISABLED,
+
+    /** 权限与开关都正常，但始终取不到位置。现在只用来说明，不停止采集。 */
+    NO_FIX,
+
+    /** 未知原因。 */
+    UNKNOWN,
+}
 
 /**
  * 记录状态的内存持有者。
@@ -15,8 +31,6 @@ import kotlinx.coroutines.flow.asStateFlow
  *
  * 因此这里只在内存里保存，进程重启即回到 IDLE，与实际状态一致。
  * 服务在 onCreate/onDestroy 里更新它，界面订阅它。
- *
- * 还承载「定位异常」信息：连续失败后采集会停止，界面据此显示原因与重试入口。
  */
 class RecordingStateHolder {
     private val _state = MutableStateFlow(RecordingState.IDLE)
@@ -24,8 +38,23 @@ class RecordingStateHolder {
 
     private val _locationIssue = MutableStateFlow<LocationFailureReason?>(null)
 
-    /** 非 null 表示采集已因定位失败而停止，界面应提示原因并给重试入口。 */
+    /**
+     * 非 null 表示采集无法进行，界面应提示原因并给重试入口。
+     *
+     * 注意：信号差（室内、地下）**不再**算失败——按间隔的订阅会继续等，
+     * 不需要用户操作。这里只放用户必须动手的两种情况：权限、定位开关。
+     */
     val locationIssue: StateFlow<LocationFailureReason?> = _locationIssue.asStateFlow()
+
+    private val _lastFix = MutableStateFlow<GeoPoint?>(null)
+
+    /**
+     * 最近一个采样点（GCJ-02）。
+     *
+     * 地图上的位置圆点直接订阅它，不再自己每 15 秒请求一次定位——
+     * 两条独立的定位链路既费电，也会让「圆点」和「轨迹末端」对不上。
+     */
+    val lastFix: StateFlow<GeoPoint?> = _lastFix.asStateFlow()
 
     fun update(newState: RecordingState) {
         _state.value = newState
@@ -33,5 +62,9 @@ class RecordingStateHolder {
 
     fun setLocationIssue(reason: LocationFailureReason?) {
         _locationIssue.value = reason
+    }
+
+    fun setLastFix(point: GeoPoint?) {
+        _lastFix.value = point
     }
 }

@@ -2,6 +2,7 @@ package com.hmilyld.daytrail.location
 
 import com.hmilyld.daytrail.core.CoordinateTransform
 import com.hmilyld.daytrail.core.GeoPoint
+import kotlinx.coroutines.flow.Flow
 
 /**
  * 坐标所属的坐标系。
@@ -50,11 +51,24 @@ data class LocationFix(
  * 由 [TrackRecorder] 统一转成 GCJ-02 入库。
  */
 interface LocationSource {
-    /** 请求一次定位。实现必须保证回调只触发一次。 */
+    /** 请求一次定位。实现必须保证回调只触发一次。用作用户主动触发的即时定位。 */
     suspend fun requestOnce(
         highAccuracy: Boolean,
         timeoutMs: Long,
     ): LocationFix?
+
+    /**
+     * 按 [intervalMs] 持续订阅定位，直到收集方取消。
+     *
+     * 记录轨迹必须走这个入口，不要用 [requestOnce] 轮询：反复
+     * `requestLocationUpdates` + `removeUpdates` 会让 GNSS 反复启停搜星，
+     * 而且拿不到点时每次都要挂满超时。一次注册、由系统按间隔回调，
+     * 才是「每隔几分钟记一个点」该有的样子，耗电也可预期。
+     *
+     * 拿不到位置时**不抛异常、不结束流**（室内、地下都可能持续几分钟），
+     * 由收集方决定是否需要提示。
+     */
+    fun updates(intervalMs: Long): Flow<LocationFix>
 
     /** 释放资源。 */
     fun release()

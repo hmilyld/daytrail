@@ -20,45 +20,60 @@ import com.hmilyld.daytrail.data.repo.todayKey
 import com.hmilyld.daytrail.permission.Permissions
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.retryWhen
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
 
 /**
  * 记录服务。
+ *
+ * 采样模型是「手表式」的，只有一句话：
+ * **注册一次定位订阅，系统每 N 分钟回调一个点，写库，连线。**
  *
  * 关键约束：
  * - `foregroundServiceType="location"`，Android 14+ 必须声明，否则 startForeground 抛异常
  * - Android 12+ 禁止后台启动前台服务，因此只能由用户点击或通知动作触发
  * - 服务用 START_STICKY，被系统杀掉后尽量恢复
  *
- * 采样由自己的调度循环驱动，而不是让 SDK 连续上报：
- * 连续模式间隔固定，无法在静止时降到 10 分钟、休眠时完全停下。
+ * 为什么不再「每轮申请一次定位」（见 AGENTS.md 4.x）：
+ * 反复 request + remove 会让 GNSS 每轮重新搜星，取不到点时一次要挂满 25–45 秒，
+ * 而且失败后 15 秒就重试。改成一次注册、按间隔回调之后，耗电与间隔成正比，
+ * 用户也能从设置页算出一天记多少点。
  */
 class RecordingService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     private lateinit var systemSource: SystemLocationSource
     private lateinit var recorder: TrackRecorder
-    private lateinit var samplingPolicy: SamplingPolicy
-    private var sleepController: SleepController? = null
+
+    /** 采样节奏。只决定「下一次隔多久」，不再推断运动状态。 */
+    private val tempo = SamplingTempo(SamplingPreset.POWER_SAVER)
 
     private var loopJob: Job? = null
     private var tierJob: Job? = null
-    private var currentState = MovementState.WALKING
-    private var lastFix: LocationFix? = null
+    private var watchdogJob: Job? = null
 
-    /** 本会话是否已经成功采到过点。用于给首次定位更长的超时。 */
-    private var hasEverSampled = false
+    /**
+     * 当前订阅用的间隔。值变化时 [flatMapLatest] 会重新注册，
+     * 同值不会重复注册——这是「只注册一次」的关键。
+     */
+    private val sampleInterval = MutableStateFlow(0L)
 
-    /** 连续失败预算。耗尽后停止采集，避免无限重试耗电。 */
-    private val failureBudget = SamplingFailureBudget()
+    /** 上一次拿到位置的时间（wall clock）。用于判断是否长时间没有回调。 */
+    private var lastFixAtMs = 0L
 
-    private var pendingWake: (() -> Unit)? = null
+    /** 上一次发出去的通知文案。相同文案不重复 post，避免无谓唤醒。 */
+    private var lastNotificationText: String? = null
 
     private val appContainer
         get() = (application as DayTrailApplication).container
@@ -68,17 +83,10 @@ class RecordingService : Service() {
         createNotificationChannel()
 
         systemSource = SystemLocationSource(this)
-        samplingPolicy = SamplingPolicy(SamplingPreset.POWER_SAVER)
         recorder =
             TrackRecorder(
                 repository = appContainer.trackRepository,
                 scope = scope,
-            )
-        sleepController =
-            SleepController(
-                context = this,
-                fallbackIntervalMs = SamplingPreset.POWER_SAVER.profile.sleepFallbackMs,
-                onWake = { handleWake() },
             )
     }
 
@@ -105,9 +113,7 @@ class RecordingService : Service() {
     }
 
     override fun onDestroy() {
-        loopJob?.cancel()
-        tierJob?.cancel()
-        sleepController?.release()
+        cancelJobs()
         systemSource.release()
         appContainer.recordingState.update(RecordingState.IDLE)
         scope.cancel()
@@ -119,22 +125,36 @@ class RecordingService : Service() {
     private fun startRecording() {
         if (loopJob?.isActive == true) return
 
-        // 新会话：清掉上一次的异常状态与失败计数
-        failureBudget.reset()
-        hasEverSampled = false
+        // 新会话：清掉上一次的异常状态
+        tempo.reset()
+        lastFixAtMs = System.currentTimeMillis()
+        lastNotificationText = null
         appContainer.recordingState.setLocationIssue(null)
-
+        appContainer.recordingState.update(RecordingState.RECORDING)
         startForegroundCompat(buildNotification(getString(R.string.record_starting)))
+
+        // 权限或开关有问题时，采集无法进行。这类问题必须让用户去处理，
+        // 而不是原地反复请求定位——那只会耗电且永远取不到。
+        val issue = currentIssue()
+        if (issue != null) {
+            appContainer.recordingState.setLocationIssue(issue)
+            Log.w(TAG, "无法开始采集：$issue")
+            notify(getString(R.string.record_location_failed), ongoing = false)
+            appContainer.recordingState.update(RecordingState.IDLE)
+            // 保持通知可见，让离开应用的用户也能看到原因
+            stopForeground(STOP_FOREGROUND_DETACH)
+            stopSelf()
+            return
+        }
 
         loopJob =
             scope.launch {
                 // 档位必须在循环开始前读：早期实现写死了 POWER_SAVER，
-                // 用户在设置里选「高精度」完全没效果——界面显示 30 秒一个点，
-                // 实际还是 3 分钟，用户会以为定位不灵。
+                // 用户在设置里选「高精度」完全没效果。
                 applyTier(appContainer.settingsStore.samplingTier.first())
+                sampleInterval.value = tempo.intervalMs
                 observeTierChanges()
 
-                appContainer.recordingState.update(RecordingState.RECORDING)
                 recorder.restoreLastPoint()
                 recorder.startAutoFlush()
                 runSamplingLoop()
@@ -144,15 +164,17 @@ class RecordingService : Service() {
     /**
      * 应用采样档位。
      *
-     * 只改 [SamplingPolicy] 的 preset，不重建对象：滞回状态要保留，
-     * 否则切档会让「静止多久后休眠」重新计时。
+     * 只改 [SamplingTempo] 的 preset，不重建对象：降档计时要保留，
+     * 否则切档会让「已经静止多久」重新计时。
      */
     private fun applyTier(tier: SamplingTier) {
-        val next = SamplingPreset.valueOf(tier.name)
-        if (samplingPolicy.preset == next) return
+        val next = presetOf(tier)
+        if (tempo.preset == next) return
         Log.d(TAG, "采样档位切换为 $next")
-        samplingPolicy.preset = next
-        sleepController?.fallbackIntervalMs = next.profile.sleepFallbackMs
+        tempo.preset = next
+        if (loopJob?.isActive == true) {
+            sampleInterval.value = tempo.intervalMs
+        }
     }
 
     /** 录制过程中改档位也要生效，不必等下一次开始记录。 */
@@ -165,32 +187,24 @@ class RecordingService : Service() {
     }
 
     private fun pauseRecording() {
-        loopJob?.cancel()
-        loopJob = null
-        tierJob?.cancel()
-        tierJob = null
+        cancelJobs()
         recorder.stopAutoFlush()
-        sleepController?.wake()
-        systemSource.release()
         appContainer.recordingState.update(RecordingState.PAUSED)
         appContainer.recordingState.setLocationIssue(null)
         scope.launch { recorder.finish() }
-        notify(buildNotification(getString(R.string.record_paused_status)))
+        notify(getString(R.string.record_paused_status))
     }
 
-    /** 定位异常后的手动重试。重置预算并重新开始采集。 */
+    /** 定位异常后的手动重试。重置状态并重新开始采集。 */
     private fun retryRecording() {
         Log.d(TAG, "用户手动重试定位")
+        appContainer.recordingState.setLocationIssue(null)
         startRecording()
     }
 
     private fun stopRecording() {
-        loopJob?.cancel()
-        loopJob = null
-        tierJob?.cancel()
-        tierJob = null
+        cancelJobs()
         recorder.stopAutoFlush()
-        sleepController?.wake()
         scope.launch {
             recorder.finish()
             appContainer.recordingState.update(RecordingState.IDLE)
@@ -199,157 +213,105 @@ class RecordingService : Service() {
         }
     }
 
-    // ---- 采样循环 ----
-
-    private suspend fun runSamplingLoop() {
-        while (true) {
-            // null 表示当前应休眠，不主动采样
-            if (samplingPolicy.intervalFor(currentState) == null) {
-                // 休眠：停掉定位，交给传感器与兜底闹钟
-                sleepController?.sleep()
-                notify(buildNotification(getString(R.string.record_sleeping_status)))
-
-                suspendCancellableCoroutine<Unit> { continuation ->
-                    pendingWake = { continuation.resumeWith(Result.success(Unit)) }
-                }
-
-                // 关键：唤醒后必须退出 SLEEPING，否则下一轮 intervalFor 仍返回 null，
-                // 会立刻再次休眠，永远不采样。
-                currentState = MovementState.WALKING
-                samplingPolicy.reset()
-                sleepController?.wake()
-                continue
-            }
-
-            sleepController?.wake()
-
-            val fix =
-                requestFix(
-                    highAccuracy = samplingPolicy.requiresHighAccuracy(currentState),
-                    firstFix = !hasEverSampled,
-                )
-
-            val hasLocation = fix != null && fix.errorCode == 0
-
-            if (hasLocation) {
-                // 拿到位置就算采集成功——哪怕这个点因为精度低被过滤器丢掉。
-                // 「定位失败」和「点位没有信息量」是两件事，混为一谈会导致
-                // 室内（只有基站定位）时误判为失败并停止记录。
-                hasEverSampled = true
-                failureBudget.recordSuccess()
-
-                val stored = recordFix(fix)
-                if (!stored) {
-                    Log.d(
-                        TAG,
-                        "点位被过滤（原因=${recorder.lastRejectReason}" +
-                            " 精度=${fix.accuracyMeters}m），继续按间隔采样",
-                    )
-                }
-
-                // 必须重新计算：recordFix 里可能已经把状态从 WALKING 改成 DRIVING
-                val nextInterval = samplingPolicy.intervalFor(currentState) ?: 0L
-                Log.d(TAG, "采样完成，等待 ${nextInterval / 1000}s，状态=$currentState")
-                delay(nextInterval)
-            } else {
-                // 完全没有拿到位置，才是真正的失败
-                val reason = detectFailureReason(fix?.errorCode)
-                val exhausted = failureBudget.recordFailure()
-                Log.d(
-                    TAG,
-                    "本轮未取得位置（reason=$reason error=${fix?.errorCode}），" +
-                        "第 ${failureBudget.consecutiveFailures} 次失败",
-                )
-
-                if (exhausted) {
-                    // 放弃采集：继续重试只会持续唤醒 GPS，纯耗电且没有意义。
-                    enterLocationIssue(reason)
-                    return
-                }
-
-                notify(buildNotification(getString(R.string.record_waiting_location)))
-                delay(RETRY_DELAY_MS)
-            }
-        }
-    }
-
-    /**
-     * 判断失败原因，给用户可操作的提示。
-     *
-     * 这三类原因的处理方式完全不同：权限要去设置页、开关要去快捷面板、
-     * 纯粹信号差只需换个地方再试。
-     */
-    private fun detectFailureReason(lastErrorCode: Int?): LocationFailureReason =
-        when {
-            // 大致位置也够用，只有完全没权限才算失败
-            !Permissions.hasAnyLocation(this) -> LocationFailureReason.PERMISSION_DENIED
-            !Permissions.isLocationServiceEnabled(this) -> LocationFailureReason.LOCATION_DISABLED
-            !systemSource.hasAnyProvider() -> LocationFailureReason.LOCATION_DISABLED
-            lastErrorCode == null -> LocationFailureReason.NO_FIX
-            else -> LocationFailureReason.NO_FIX
-        }
-
-    /** 进入「定位异常」状态：停止采集，保留通知与界面提示。 */
-    private fun enterLocationIssue(reason: LocationFailureReason) {
+    private fun cancelJobs() {
         loopJob?.cancel()
         loopJob = null
-        systemSource.release()
+        tierJob?.cancel()
+        tierJob = null
+        watchdogJob?.cancel()
+        watchdogJob = null
+    }
 
-        appContainer.recordingState.setLocationIssue(reason)
-        notify(buildNotification(getString(R.string.record_location_failed)))
+    // ---- 采样 ----
+
+    /**
+     * 采样主体。
+     *
+     * 1. 先主动取一次，让用户点完「开始记录」几秒内就能看到一个点；
+     * 2. 之后完全交给按间隔的订阅，档位变了才重新注册；
+     * 3. 订阅本身失败（provider 被关掉等）时，等 30 秒重试，不退出服务。
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private suspend fun runSamplingLoop() {
+        systemSource
+            .requestOnce(highAccuracy = true, timeoutMs = INITIAL_FIX_TIMEOUT_MS)
+            ?.let { onFix(it) }
+
+        startWatchdog()
+
+        sampleInterval
+            .filter { it > 0 }
+            .distinctUntilChanged()
+            .flatMapLatest { interval -> systemSource.updates(interval) }
+            .retryWhen { cause, _ ->
+                Log.w(TAG, "定位订阅中断：${cause.message}，${RESUBSCRIBE_DELAY_MS / 1000}s 后重试")
+                delay(RESUBSCRIBE_DELAY_MS)
+                true
+            }.collect { fix ->
+                onFix(fix)
+                // 档位可能在 onFix 里变了。同值不会触发重新注册。
+                sampleInterval.value = tempo.intervalMs
+            }
     }
 
     /**
-     * 把定位结果写入缓冲。
+     * 处理一个定位结果。
      *
-     * @return 是否被接受（过滤器可能因精度差、跳变等原因丢弃）
+     * 两件事必须按顺序做：先用**上一个已接受的点**更新节奏，
+     * 再写入缓冲。反过来的话就是拿新点和自己比，速度永远是 0。
      */
-    private suspend fun recordFix(fix: LocationFix): Boolean {
-        val previousSample = lastFix?.let { MovementSample(it.point, it.timestampMs, it.speedMps) }
-        currentState =
-            samplingPolicy.nextState(
-                previous = previousSample,
-                sample = MovementSample(fix.point, fix.timestampMs, fix.speedMps),
-                currentState = currentState,
-            )
-        lastFix = fix
+    private suspend fun onFix(fix: LocationFix) {
+        if (fix.errorCode != 0) return
+        lastFixAtMs = System.currentTimeMillis()
+
+        val point = fix.toGcj02()
+        val previousAccepted =
+            recorder.lastAccepted?.let { TempoSample(it.timestampMs, it.point) }
 
         val accepted = recorder.offer(fix)
+
+        tempo.observe(
+            previous = previousAccepted,
+            sample = TempoSample(fix.timestampMs, point),
+        )
+
+        // 地图上的位置圆点跟着这条路走，不再自己轮询定位
+        appContainer.recordingState.setLastFix(point)
+
         if (accepted) {
             updateNotification()
         }
-        return accepted
     }
 
     /**
-     * 请求一次定位。
+     * 长时间没有回调时把通知切回「正在获取定位」。
      *
-     * **只用系统定位（Android LocationManager）**，不再使用高德定位 SDK。
-     *
-     * 原因：高德定位需要 `com.amap.api.location.APSService` 在 Manifest 里声明，
-     * 漏声明会导致它永远返回 error 7（定位失败），而地图上的位置圆点
-     * （走系统定位）却正常显示——用户会看到「地图上有圆点但说定位失败」。
-     * 两套定位并存还会互相抢资源、各自算一套失败计数。
-     *
-     * 系统定位同样能拿到 GPS 与网络定位，对本应用「记录大概位置」的需求足够，
-     * 而且不依赖厂商 SDK 的额外服务。
-     *
-     * @param firstFix 是否本次会话的第一次定位。GPS 冷启动通常要 30–60 秒，
-     *   首次给更长的超时，否则几乎必然失败。
+     * 这里只改提示，**不停止采集**：室内、地下连续几分钟拿不到位置是正常的，
+     * 按间隔的订阅会自己等到下一次回调。早期实现把「连续 5 次失败」当成
+     * 错误并停止记录，结果用户明明在走动，应用却显示「定位失败」。
      */
-    private suspend fun requestFix(
-        highAccuracy: Boolean,
-        firstFix: Boolean,
-    ): LocationFix? {
-        val timeout =
-            if (firstFix) INITIAL_FIX_TIMEOUT_MS else FIX_TIMEOUT_MS
-        return systemSource.requestOnce(highAccuracy, timeout)
+    private fun startWatchdog() {
+        watchdogJob?.cancel()
+        watchdogJob =
+            scope.launch {
+                while (isActive) {
+                    delay(WATCHDOG_TICK_MS)
+                    val silentMs = System.currentTimeMillis() - lastFixAtMs
+                    if (silentMs >= NO_FIX_NOTICE_MS) {
+                        notify(getString(R.string.record_waiting_location))
+                    }
+                }
+            }
     }
 
-    private fun handleWake() {
-        pendingWake?.invoke()
-        pendingWake = null
-    }
+    /** 判断采集是否根本无法进行。只有权限与定位开关算，信号差不在此列。 */
+    private fun currentIssue(): LocationFailureReason? =
+        when {
+            !Permissions.hasAnyLocation(this) -> LocationFailureReason.PERMISSION_DENIED
+            !Permissions.isLocationServiceEnabled(this) -> LocationFailureReason.LOCATION_DISABLED
+            !systemSource.hasAnyProvider() -> LocationFailureReason.LOCATION_DISABLED
+            else -> null
+        }
 
     // ---- 通知 ----
 
@@ -359,26 +321,29 @@ class RecordingService : Service() {
      * 用当天的「累积移动 + 静止时长」而不是「距离首个点过了多久」：
      * 后者会把两次记录之间的空档也算进去——早上记完、傍晚再记，
      * 通知会显示「已记录 8 小时」，明显不对。
-     *
-     * 数据来自 `track_day`，由日汇总在每次刷盘时更新，
-     * 所以最长滞后 60 秒，对通知来说可以接受。
      */
     private suspend fun updateNotification() {
         val day = appContainer.trackRepository.observeDay(todayKey()).first()
         val minutes = ((day?.movingMillis ?: 0L) + (day?.stoppedMillis ?: 0L)) / 60_000
         val points = day?.pointCount ?: 0
-        notify(
-            buildNotification(
-                getString(R.string.record_elapsed, minutes, points),
-            ),
-        )
+        notify(getString(R.string.record_elapsed, minutes, points))
     }
 
-    private fun notify(notification: Notification) {
-        getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification)
+    /** 文案相同就不重复 post。通知刷屏既吵也费电。 */
+    private fun notify(
+        text: String,
+        ongoing: Boolean = true,
+    ) {
+        if (text == lastNotificationText) return
+        lastNotificationText = text
+        getSystemService(NotificationManager::class.java)
+            .notify(NOTIFICATION_ID, buildNotification(text, ongoing))
     }
 
-    private fun buildNotification(statusText: String): Notification {
+    private fun buildNotification(
+        statusText: String,
+        ongoing: Boolean = true,
+    ): Notification {
         val openApp =
             PendingIntent.getActivity(
                 this,
@@ -427,7 +392,7 @@ class RecordingService : Service() {
             .setContentText(statusText)
             .setSmallIcon(R.drawable.ic_stat_track)
             .setContentIntent(openApp)
-            .setOngoing(true)
+            .setOngoing(ongoing)
             .setSilent(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .addAction(0, actionLabel, actionPending)
@@ -462,24 +427,22 @@ class RecordingService : Service() {
         private const val CHANNEL_ID = "recording"
         private const val NOTIFICATION_ID = 1001
 
-        /** 单次定位的等待上限。粗定位在室内可能要十几秒，给足余量。 */
-        private const val FIX_TIMEOUT_MS = 25_000L
-
         /**
-         * 首次定位的超时。
+         * 会话首个点的等待上限。
          *
-         * GPS 冷启动需要搜星，通常 30–60 秒。用 25 秒会几乎必然失败，
-         * 用户看到的就是「点了开始记录没反应」。
+         * GPS 冷启动要搜星，通常 30–60 秒。这一次给足，之后完全交给订阅，
+         * 不再有「一轮一轮超时」的问题。
          */
         private const val INITIAL_FIX_TIMEOUT_MS = 45_000L
 
-        /**
-         * 采点失败后的重试间隔。
-         *
-         * 不能用状态间隔：步行档是 3 分钟，用户点「开始记录」后
-         * 要等 3 分钟才看到第一个点，会以为功能坏了。
-         */
-        private const val RETRY_DELAY_MS = 15_000L
+        /** 订阅中断后的重试间隔。 */
+        private const val RESUBSCRIBE_DELAY_MS = 30_000L
+
+        /** 看门狗轮询间隔。 */
+        private const val WATCHDOG_TICK_MS = 60_000L
+
+        /** 超过这么久没有回调，就把通知切回「正在获取定位」。 */
+        private const val NO_FIX_NOTICE_MS = 10 * 60_000L
 
         const val ACTION_START = "com.hmilyld.daytrail.action.START"
         const val ACTION_PAUSE = "com.hmilyld.daytrail.action.PAUSE"

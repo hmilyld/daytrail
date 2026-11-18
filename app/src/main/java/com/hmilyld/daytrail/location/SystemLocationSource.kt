@@ -8,6 +8,12 @@ import android.location.LocationManager
 import android.os.Looper
 import android.util.Log
 import com.hmilyld.daytrail.core.GeoPoint
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -64,6 +70,104 @@ class SystemLocationSource(
 
         return best.toFix()
     }
+
+    /**
+     * 按间隔持续订阅定位。
+     *
+     * GPS 优先：只在 GPS 迟迟没有回调时才补注册网络定位。
+     * 室外不注册网络 provider，就不会白白拉起基站与 WiFi 扫描——
+     * 那是「明明在户外，耗电还是不低」的常见来源。
+     *
+     * 拿不到位置时不结束流：室内、地下都会连续几分钟没有回调，
+     * 这属于正常情况，由调用方决定要不要提示用户。
+     */
+    @SuppressLint("MissingPermission")
+    override fun updates(intervalMs: Long): Flow<LocationFix> =
+        callbackFlow {
+            val lm = manager ?: throw IllegalStateException("设备没有 LocationManager")
+
+            val gpsEnabled =
+                runCatching { lm.isProviderEnabled(LocationManager.GPS_PROVIDER) }
+                    .getOrDefault(false)
+            val networkEnabled =
+                runCatching { lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER) }
+                    .getOrDefault(false)
+
+            val initial =
+                when {
+                    gpsEnabled -> listOf(LocationManager.GPS_PROVIDER)
+                    networkEnabled -> listOf(LocationManager.NETWORK_PROVIDER)
+                    else -> throw IllegalStateException("没有启用的定位 provider")
+                }
+
+            val registered = mutableListOf<String>()
+            var delivered = false
+
+            val listener =
+                object : LocationListener {
+                    override fun onLocationChanged(location: Location) {
+                        delivered = true
+                        trySend(location.toFix())
+                    }
+
+                    @Deprecated("Deprecated in API 30")
+                    override fun onStatusChanged(
+                        provider: String?,
+                        status: Int,
+                        extras: android.os.Bundle?,
+                    ) = Unit
+
+                    override fun onProviderEnabled(provider: String) = Unit
+
+                    override fun onProviderDisabled(provider: String) = Unit
+                }
+
+            fun register(providers: List<String>) {
+                providers.forEach { provider ->
+                    if (provider in registered) return@forEach
+                    runCatching {
+                        lm.requestLocationUpdates(
+                            provider,
+                            intervalMs,
+                            0f,
+                            listener,
+                            Looper.getMainLooper(),
+                        )
+                    }.onSuccess {
+                        registered += provider
+                        Log.d(TAG, "订阅 $provider，间隔 ${intervalMs / 1000}s")
+                    }.onFailure {
+                        Log.d(TAG, "订阅 $provider 失败：${it.message}")
+                    }
+                }
+            }
+
+            register(initial)
+            if (registered.isEmpty()) {
+                throw IllegalStateException("定位 provider 注册失败")
+            }
+
+            if (registered == listOf(LocationManager.GPS_PROVIDER) && networkEnabled) {
+                // 室内 GPS 可能永远不回调。等一小会儿仍没有结果就补注册网络定位，
+                // 上限 3 分钟，避免在室内干等一个 10 分钟的间隔。
+                val grace = minOf(intervalMs * 2, NETWORK_FALLBACK_CAP_MS)
+                launch {
+                    delay(grace + NETWORK_FALLBACK_GRACE_MS)
+                    if (!delivered) {
+                        Log.d(TAG, "GPS 迟迟没有回调，补注册网络定位")
+                        register(listOf(LocationManager.NETWORK_PROVIDER))
+                    }
+                }
+            }
+
+            // 注册时先给一次缓存位置：重新订阅（档位变化）之后不必再等一个间隔。
+            // 只有比一个间隔还新的缓存才用，避免写入陈旧坐标。
+            newestCached(lm, registered)
+                ?.takeIf { System.currentTimeMillis() - it.time <= intervalMs }
+                ?.let { trySend(it.toFix()) }
+
+            awaitClose { runCatching { lm.removeUpdates(listener) } }
+        }.conflate()
 
     /** 取所有 provider 里最新的缓存位置。 */
     @SuppressLint("MissingPermission")
@@ -215,5 +319,11 @@ class SystemLocationSource(
          * 省电档下采样间隔是 10 分钟，因此 2 分钟的缓存窗口不会造成明显滞后。
          */
         const val FRESH_ENOUGH_MS = 2 * 60_000L
+
+        /** 补注册网络定位前的等待上限。室内 GPS 可能永远不回调。 */
+        const val NETWORK_FALLBACK_CAP_MS = 3 * 60_000L
+
+        /** 在等待上限之外再留的余量，避开一个刚好卡在边界上的回调。 */
+        const val NETWORK_FALLBACK_GRACE_MS = 30_000L
     }
 }

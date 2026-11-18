@@ -98,6 +98,16 @@ class PointFilterTest {
     }
 
     @Test
+    fun `still interval point is not swallowed by the heartbeat`() {
+        // 静止档每 10 分钟一个点。心跳必须比它短，否则每个点都会被当成噪声丢掉，
+        // 界面看起来像没在记录。
+        val previous = sample(metersNorth = 0.0, secondsLater = 0, accuracy = 30f)
+        val candidate = sample(metersNorth = 2.0, secondsLater = 601, accuracy = 30f)
+
+        assertTrue(filter.judge(previous, candidate) is FilterVerdict.Accept)
+    }
+
+    @Test
     fun `duplicate point within window is rejected`() {
         val previous = sample(metersNorth = 0.0, secondsLater = 0)
         val candidate = sample(metersNorth = 1.0, secondsLater = 10)
