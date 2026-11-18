@@ -56,6 +56,16 @@ class RecordingStateHolder {
      */
     val lastFix: StateFlow<GeoPoint?> = _lastFix.asStateFlow()
 
+    private val _fixStale = MutableStateFlow(false)
+
+    /**
+     * 记录中，但已经很久没有拿到新点位。
+     *
+     * 这不是「失败」：室内、地下都会这样，采集仍在按间隔等。界面据此给一句
+     * 琥珀色提示，避免用户看着「记录中」和不变的点数，以为一切正常。
+     */
+    val fixStale: StateFlow<Boolean> = _fixStale.asStateFlow()
+
     fun update(newState: RecordingState) {
         _state.value = newState
     }
@@ -66,5 +76,9 @@ class RecordingStateHolder {
 
     fun setLastFix(point: GeoPoint?) {
         _lastFix.value = point
+    }
+
+    fun setFixStale(stale: Boolean) {
+        _fixStale.value = stale
     }
 }

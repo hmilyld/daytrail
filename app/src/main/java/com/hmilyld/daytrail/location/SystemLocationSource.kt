@@ -13,6 +13,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
@@ -101,12 +102,12 @@ class SystemLocationSource(
                 }
 
             val registered = mutableListOf<String>()
-            var delivered = false
+            var lastDeliveryAtMs = System.currentTimeMillis()
 
             val listener =
                 object : LocationListener {
                     override fun onLocationChanged(location: Location) {
-                        delivered = true
+                        lastDeliveryAtMs = System.currentTimeMillis()
                         trySend(location.toFix())
                     }
 
@@ -148,14 +149,20 @@ class SystemLocationSource(
             }
 
             if (registered == listOf(LocationManager.GPS_PROVIDER) && networkEnabled) {
-                // 室内 GPS 可能永远不回调。等一小会儿仍没有结果就补注册网络定位，
-                // 上限 3 分钟，避免在室内干等一个 10 分钟的间隔。
-                val grace = minOf(intervalMs * 2, NETWORK_FALLBACK_CAP_MS)
+                // 室内 GPS 可能永远不回调，而且**中途进室内**也会发生：
+                // 早上在户外开始记录，下午到了公司就再也拿不到点。
+                // 所以这不是「开局判一次」，而是持续盯着——连续两个间隔都没有
+                // 回调，就补注册网络定位；补上之后本次订阅不再重复注册。
                 launch {
-                    delay(grace + NETWORK_FALLBACK_GRACE_MS)
-                    if (!delivered) {
-                        Log.d(TAG, "GPS 迟迟没有回调，补注册网络定位")
+                    val fallbackAfter = maxOf(intervalMs * 2, MIN_FALLBACK_AFTER_MS)
+                    while (isActive) {
+                        delay(FALLBACK_CHECK_MS)
+                        val silentMs = System.currentTimeMillis() - lastDeliveryAtMs
+                        if (silentMs < fallbackAfter) continue
+                        if (LocationManager.NETWORK_PROVIDER in registered) break
+                        Log.d(TAG, "GPS 已 ${silentMs / 1000}s 没有回调，补注册网络定位")
                         register(listOf(LocationManager.NETWORK_PROVIDER))
+                        break
                     }
                 }
             }
@@ -320,10 +327,10 @@ class SystemLocationSource(
          */
         const val FRESH_ENOUGH_MS = 2 * 60_000L
 
-        /** 补注册网络定位前的等待上限。室内 GPS 可能永远不回调。 */
-        const val NETWORK_FALLBACK_CAP_MS = 3 * 60_000L
+        /** 补注册网络定位前的等待下限。驾车档间隔只有 1 分钟，不能等太久。 */
+        const val MIN_FALLBACK_AFTER_MS = 4 * 60_000L
 
-        /** 在等待上限之外再留的余量，避开一个刚好卡在边界上的回调。 */
-        const val NETWORK_FALLBACK_GRACE_MS = 30_000L
+        /** 检查「GPS 是否已经不再回调」的频率。 */
+        const val FALLBACK_CHECK_MS = 60_000L
     }
 }

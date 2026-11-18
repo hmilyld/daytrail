@@ -1,4 +1,4 @@
-package com.hmilyld.daytrail.location
+﻿package com.hmilyld.daytrail.location
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -115,6 +115,7 @@ class RecordingService : Service() {
     override fun onDestroy() {
         cancelJobs()
         systemSource.release()
+        appContainer.recordingState.setFixStale(false)
         appContainer.recordingState.update(RecordingState.IDLE)
         scope.cancel()
         super.onDestroy()
@@ -130,6 +131,7 @@ class RecordingService : Service() {
         lastFixAtMs = System.currentTimeMillis()
         lastNotificationText = null
         appContainer.recordingState.setLocationIssue(null)
+        appContainer.recordingState.setFixStale(false)
         appContainer.recordingState.update(RecordingState.RECORDING)
         startForegroundCompat(buildNotification(getString(R.string.record_starting)))
 
@@ -191,6 +193,7 @@ class RecordingService : Service() {
         recorder.stopAutoFlush()
         appContainer.recordingState.update(RecordingState.PAUSED)
         appContainer.recordingState.setLocationIssue(null)
+        appContainer.recordingState.setFixStale(false)
         scope.launch { recorder.finish() }
         notify(getString(R.string.record_paused_status))
     }
@@ -207,6 +210,7 @@ class RecordingService : Service() {
         recorder.stopAutoFlush()
         scope.launch {
             recorder.finish()
+            appContainer.recordingState.setFixStale(false)
             appContainer.recordingState.update(RecordingState.IDLE)
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
@@ -277,6 +281,7 @@ class RecordingService : Service() {
 
         // 地图上的位置圆点跟着这条路走，不再自己轮询定位
         appContainer.recordingState.setLastFix(point)
+        appContainer.recordingState.setFixStale(false)
 
         if (accepted) {
             updateNotification()
@@ -297,6 +302,7 @@ class RecordingService : Service() {
                 while (isActive) {
                     delay(WATCHDOG_TICK_MS)
                     val silentMs = System.currentTimeMillis() - lastFixAtMs
+                    appContainer.recordingState.setFixStale(silentMs >= STALE_AFTER_MS)
                     if (silentMs >= NO_FIX_NOTICE_MS) {
                         notify(getString(R.string.record_waiting_location))
                     }
@@ -443,6 +449,15 @@ class RecordingService : Service() {
 
         /** 超过这么久没有回调，就把通知切回「正在获取定位」。 */
         private const val NO_FIX_NOTICE_MS = 10 * 60_000L
+
+        /**
+         * 超过这么久没有回调，界面上给一句「暂时没有新的定位」。
+         *
+         * 比通知的 10 分钟更保守：静止档本身就是 10 分钟一个点，
+         * 10 分钟没点可能只是刚好跨过一个周期。15 分钟说明至少漏了一轮，
+         * 这时提示才对用户有信息量，否则就是在健康状态下闪来闪去。
+         */
+        private const val STALE_AFTER_MS = 15 * 60_000L
 
         const val ACTION_START = "com.hmilyld.daytrail.action.START"
         const val ACTION_PAUSE = "com.hmilyld.daytrail.action.PAUSE"

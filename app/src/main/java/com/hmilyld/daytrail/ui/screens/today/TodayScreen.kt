@@ -136,14 +136,23 @@ private fun TodayContent(
                 MapUnavailablePlaceholder(modifier = Modifier.fillMaxSize())
             }
 
-            RecordingPill(
-                state = state.recordingState,
-                duration = state.duration,
+            // 记录状态 + 「暂时没有新定位」放在同一列：
+            // 后者是前者的补充说明，粘在一起比各自飘在屏幕上更好读。
+            Column(
                 modifier =
                     Modifier
                         .align(Alignment.TopStart)
                         .padding(12.dp),
-            )
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                RecordingPill(
+                    state = state.recordingState,
+                    duration = state.duration,
+                )
+                if (state.fixStale && state.recordingState == RecordingState.RECORDING) {
+                    StaleFixHint()
+                }
+            }
 
             // 定位按钮：地图右上角，与状态胶囊同一行
             if (mapAvailable) {
@@ -246,6 +255,43 @@ private fun RecordingPill(
                 Text(text = "·", style = MaterialTheme.typography.labelLarge)
                 Text(text = duration, style = MaterialTheme.typography.labelLarge)
             }
+        }
+    }
+}
+
+/**
+ * 「暂时没有新定位」提示。
+ *
+ * 与定位异常条的区别：这不是故障，采集还在按间隔等，所以：
+ * - 用琥珀色（数据缺失语义）而不是错误红
+ * - 不给「重试」按钮——重试没有意义，它自己会恢复
+ * - 必须带文字，不能只靠颜色
+ *
+ * 阈值是 15 分钟（见 `RecordingService.STALE_AFTER_MS`）：静止档本身就是
+ * 10 分钟一个点，太早提示会在健康状态下闪来闪去。
+ */
+@Composable
+private fun StaleFixHint(modifier: Modifier = Modifier) {
+    Surface(
+        color = MaterialTheme.colorScheme.tertiaryContainer,
+        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+        shape = MaterialTheme.shapes.extraLarge,
+        modifier = modifier,
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.LocationOff,
+                contentDescription = null,
+                modifier = Modifier.size(14.dp),
+            )
+            Text(
+                text = stringResource(R.string.today_fix_stale),
+                style = MaterialTheme.typography.labelMedium,
+            )
         }
     }
 }

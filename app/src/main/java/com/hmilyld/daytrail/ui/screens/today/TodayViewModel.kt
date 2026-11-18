@@ -42,6 +42,13 @@ data class TodayUiState(
      * 那样既费电，也会让圆点和轨迹末端对不上。
      */
     val lastFix: GeoPoint? = null,
+    /**
+     * 记录中但很久没有新点位。
+     *
+     * 与 [locationIssue] 不同：这不是失败，采集还在按间隔等，
+     * 只是要让用户知道「现在没有新数据」，而不是看着不变的数字以为一切正常。
+     */
+    val fixStale: Boolean = false,
 )
 
 /**
@@ -107,6 +114,8 @@ class TodayViewModel(
             )
         }.combine(recordingState.locationIssue) { state, issue ->
             state.copy(locationIssue = issue)
+        }.combine(recordingState.fixStale) { state, stale ->
+            state.copy(fixStale = stale)
         }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5_000),
