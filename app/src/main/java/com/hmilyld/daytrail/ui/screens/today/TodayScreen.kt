@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -99,81 +100,91 @@ private fun TodayContent(
     var amap by remember { mutableStateOf<AMap?>(null) }
     val polylineColor = MaterialTheme.colorScheme.primary.toArgb()
 
-    Box(modifier = modifier.fillMaxSize()) {
-        if (mapAvailable) {
-            AmapView(
-                modifier = Modifier.fillMaxSize(),
-                onMapCreated = { map -> amap = map },
-            )
-            // 当前位置标记：自己画，不依赖高德定位 SDK 的蓝点。
-            // 首次定位自动居中，打开应用就能看到自己在哪。
-            CurrentLocationMarker(
-                amap = amap,
-                recording = state.recordingState == RecordingState.RECORDING,
-                lastKnownFix = state.lastFix,
-            )
-            TrackOverlay(
-                amap = amap,
-                segments = state.trackSegments,
-                stays = state.stayMarkers,
-                polylineColor = polylineColor,
-                // 录制中不缩放：轨迹每分钟更新，每次缩放都会把用户拖动的地图
-                // 反复拽回。停止记录后再缩一次，让整条轨迹落在屏幕里。
-                autoFit = state.recordingState != RecordingState.RECORDING,
-                fitKey = state.pointCount,
-            )
-        } else {
-            MapUnavailablePlaceholder(modifier = Modifier.fillMaxSize())
-        }
-
-        RecordingPill(
-            state = state.recordingState,
-            duration = state.duration,
+    // 上下分区，而不是把面板浮在地图上：
+    // 面板直接坐在底部导航栏上方，地图到面板上沿为止。
+    // 面板若继续用四角圆角，底部两个圆角会紧贴导航栏，看起来像「缺了一块」。
+    Column(modifier = modifier.fillMaxSize()) {
+        Box(
             modifier =
                 Modifier
-                    .align(Alignment.TopStart)
-                    .padding(12.dp),
-        )
+                    .fillMaxWidth()
+                    .weight(1f),
+        ) {
+            if (mapAvailable) {
+                AmapView(
+                    modifier = Modifier.fillMaxSize(),
+                    onMapCreated = { map -> amap = map },
+                )
+                // 当前位置标记：自己画，不依赖高德定位 SDK 的蓝点。
+                // 首次定位自动居中，打开应用就能看到自己在哪。
+                CurrentLocationMarker(
+                    amap = amap,
+                    recording = state.recordingState == RecordingState.RECORDING,
+                    lastKnownFix = state.lastFix,
+                )
+                TrackOverlay(
+                    amap = amap,
+                    segments = state.trackSegments,
+                    stays = state.stayMarkers,
+                    polylineColor = polylineColor,
+                    // 录制中不缩放：轨迹每分钟更新，每次缩放都会把用户拖动的地图
+                    // 反复拽回。停止记录后再缩一次，让整条轨迹落在屏幕里。
+                    autoFit = state.recordingState != RecordingState.RECORDING,
+                    fitKey = state.pointCount,
+                )
+            } else {
+                MapUnavailablePlaceholder(modifier = Modifier.fillMaxSize())
+            }
 
-        // 定位按钮：地图右上角，与状态胶囊同一行
-        if (mapAvailable) {
-            LocateButton(
-                amap = amap,
+            RecordingPill(
+                state = state.recordingState,
+                duration = state.duration,
                 modifier =
                     Modifier
-                        .align(Alignment.TopEnd)
+                        .align(Alignment.TopStart)
                         .padding(12.dp),
             )
-        }
 
-        // 地图的文字版概要：折线对读屏不可用，必须给等价信息
-        MapAccessibilityOverlay(
-            text = state.accessibilitySummary,
-            modifier =
-                Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(start = 12.dp, bottom = 220.dp),
-        )
+            // 定位按钮：地图右上角，与状态胶囊同一行
+            if (mapAvailable) {
+                LocateButton(
+                    amap = amap,
+                    modifier =
+                        Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(12.dp),
+                )
+            }
 
-        // 空状态：未开始记录且没有数据时给一句提示，避免一片空地
-        if (state.pointCount == 0 && state.recordingState == RecordingState.IDLE) {
-            EmptyHintCard(
-                title = stringResource(R.string.today_empty_title),
-                body = stringResource(R.string.today_empty_body),
-                modifier = Modifier.align(Alignment.Center),
-            )
-        }
-
-        // 定位异常：采集已停止，明确告知原因并给一键重试
-        state.locationIssue?.let { issue ->
-            LocationIssueBanner(
-                reason = issue,
-                onRetry = onRetry,
+            // 地图的文字版概要：折线对读屏不可用，必须给等价信息
+            MapAccessibilityOverlay(
+                text = state.accessibilitySummary,
                 modifier =
                     Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(start = 12.dp, end = 12.dp, bottom = 220.dp),
+                        .align(Alignment.BottomStart)
+                        .padding(12.dp),
             )
+
+            // 空状态：未开始记录且没有数据时给一句提示，避免一片空地
+            if (state.pointCount == 0 && state.recordingState == RecordingState.IDLE) {
+                EmptyHintCard(
+                    title = stringResource(R.string.today_empty_title),
+                    body = stringResource(R.string.today_empty_body),
+                    modifier = Modifier.align(Alignment.Center),
+                )
+            }
+
+            // 定位异常：采集已停止，明确告知原因并给一键重试
+            state.locationIssue?.let { issue ->
+                LocationIssueBanner(
+                    reason = issue,
+                    onRetry = onRetry,
+                    modifier =
+                        Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(12.dp),
+                )
+            }
         }
 
         StatsSheet(
@@ -181,10 +192,6 @@ private fun TodayContent(
             onStart = onStart,
             onPause = onPause,
             onStop = onStop,
-            modifier =
-                Modifier
-                    .align(Alignment.BottomCenter)
-                    .widthIn(max = 640.dp),
         )
     }
 }
@@ -329,7 +336,13 @@ private fun EmptyHintCard(
     }
 }
 
-/** 底部统计面板，含开始 / 暂停 / 结束控制。 */
+/**
+ * 底部统计面板，含开始 / 暂停 / 结束控制。
+ *
+ * 形状：只圆上沿。面板下面直接是底部导航栏，底部再画圆角会露出两个缺口，
+ * 看起来像面板被裁掉了一块。圆角半径仍然取自 `MaterialTheme.shapes`，
+ * 不在页面里写死数值。
+ */
 @Composable
 private fun StatsSheet(
     state: TodayUiState,
@@ -340,47 +353,67 @@ private fun StatsSheet(
 ) {
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainer,
-        shape = MaterialTheme.shapes.large,
+        shape =
+            MaterialTheme.shapes.large.copy(
+                bottomStart = CornerSize(0.dp),
+                bottomEnd = CornerSize(0.dp),
+            ),
         tonalElevation = 0.dp,
         shadowElevation = 8.dp,
         modifier = modifier.fillMaxWidth(),
     ) {
-        Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
-            Row(modifier = Modifier.fillMaxWidth()) {
-                StatBlock(
-                    value = state.distanceKm,
-                    unit = stringResource(R.string.today_stat_distance),
-                    label = "",
-                    modifier = Modifier.weight(1f),
+        // 面板本身铺满整行（下沿才能和导航栏对齐），内容限宽居中。
+        // 宽屏上如果整块面板收窄，底部两个直角会悬在屏幕中间，比圆角更奇怪。
+        Box(
+            modifier = Modifier.fillMaxWidth(),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(
+                modifier =
+                    Modifier
+                        .widthIn(max = CONTENT_MAX_WIDTH)
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 16.dp),
+            ) {
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    StatBlock(
+                        value = state.distanceKm,
+                        unit = stringResource(R.string.today_stat_distance),
+                        label = "",
+                        modifier = Modifier.weight(1f),
+                    )
+                    StatBlock(
+                        value = state.duration,
+                        unit = "",
+                        label = stringResource(R.string.today_stat_duration),
+                        modifier = Modifier.weight(1f),
+                    )
+                    StatBlock(
+                        value = state.stopCount.toString(),
+                        unit = "",
+                        label = stringResource(R.string.today_stat_stops),
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+
+                HorizontalDivider(
+                    modifier = Modifier.padding(vertical = 14.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant,
                 )
-                StatBlock(
-                    value = state.duration,
-                    unit = "",
-                    label = stringResource(R.string.today_stat_duration),
-                    modifier = Modifier.weight(1f),
-                )
-                StatBlock(
-                    value = state.stopCount.toString(),
-                    unit = "",
-                    label = stringResource(R.string.today_stat_stops),
-                    modifier = Modifier.weight(1f),
+
+                RecordingControls(
+                    state = state.recordingState,
+                    onStart = onStart,
+                    onPause = onPause,
+                    onStop = onStop,
                 )
             }
-
-            HorizontalDivider(
-                modifier = Modifier.padding(vertical = 14.dp),
-                color = MaterialTheme.colorScheme.outlineVariant,
-            )
-
-            RecordingControls(
-                state = state.recordingState,
-                onStart = onStart,
-                onPause = onPause,
-                onStop = onStop,
-            )
         }
     }
 }
+
+/** 面板内容的最大宽度。宽屏上内容居中，面板本身仍然铺满整行。 */
+private val CONTENT_MAX_WIDTH = 640.dp
 
 @Composable
 private fun RecordingControls(
