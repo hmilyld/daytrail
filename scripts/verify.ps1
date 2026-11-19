@@ -27,8 +27,18 @@ $gradlew = Join-Path $root 'gradlew.bat'
 
 function Invoke-Gradle {
     param([string[]]$Tasks)
-    & $gradlew @Tasks --console=plain
-    if ($LASTEXITCODE -ne 0) {
+    # Windows PowerShell 5.1 在 $ErrorActionPreference='Stop' 下会把原生命令的
+    # stderr 当成终止错误——哪怕 Gradle 构建成功（例如 ktlint 的「无法自动修正
+    # 全部违规」只是一条提示），脚本也会直接中断。必须在调用期间放宽。
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & $gradlew @Tasks --console=plain 2>&1 | ForEach-Object { Write-Host $_ }
+        $code = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previous
+    }
+    if ($code -ne 0) {
         throw "Gradle 失败：$($Tasks -join ' ')"
     }
 }
