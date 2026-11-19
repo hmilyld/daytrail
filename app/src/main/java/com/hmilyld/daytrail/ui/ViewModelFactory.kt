@@ -6,6 +6,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.hmilyld.daytrail.AppContainer
 import com.hmilyld.daytrail.ui.screens.daydetail.DayDetailViewModel
+import com.hmilyld.daytrail.ui.screens.diagnostics.DiagnosticsViewModel
 import com.hmilyld.daytrail.ui.screens.history.HistoryViewModel
 import com.hmilyld.daytrail.ui.screens.places.PlaceDetailViewModel
 import com.hmilyld.daytrail.ui.screens.places.PlacesViewModel
@@ -41,6 +42,9 @@ fun appViewModelFactory(container: AppContainer): ViewModelProvider.Factory =
         }
         initializer {
             PlaceDetailViewModel(repository = container.trackRepository)
+        }
+        initializer {
+            DiagnosticsViewModel(log = container.diagnosticLog)
         }
         initializer {
             SettingsViewModel(

@@ -42,6 +42,10 @@ sealed interface Destination : NavKey {
     @Serializable
     data object PlacePicker : Destination
 
+    /** 诊断日志。 */
+    @Serializable
+    data object Diagnostics : Destination
+
     /** 行程详情 */
     @Serializable
     data class TripDetail(

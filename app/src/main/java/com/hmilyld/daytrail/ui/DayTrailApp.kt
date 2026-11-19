@@ -34,6 +34,7 @@ import com.hmilyld.daytrail.AppContainer
 import com.hmilyld.daytrail.ui.nav.Destination
 import com.hmilyld.daytrail.ui.nav.TopLevelDestination
 import com.hmilyld.daytrail.ui.screens.daydetail.DayDetailScreen
+import com.hmilyld.daytrail.ui.screens.diagnostics.DiagnosticsScreen
 import com.hmilyld.daytrail.ui.screens.history.HistoryScreen
 import com.hmilyld.daytrail.ui.screens.onboarding.OnboardingScreen
 import com.hmilyld.daytrail.ui.screens.permission.PermissionScreen
@@ -204,6 +205,15 @@ private fun NavHost(
                         onOpenPlaces = {
                             backStack.add(Destination.Places)
                         },
+                        onOpenDiagnostics = {
+                            backStack.add(Destination.Diagnostics)
+                        },
+                    )
+                }
+                entry<Destination.Diagnostics> {
+                    DiagnosticsScreen(
+                        container = container,
+                        onBack = { backStack.removeLastOrNull() },
                     )
                 }
                 entry<Destination.Places> {

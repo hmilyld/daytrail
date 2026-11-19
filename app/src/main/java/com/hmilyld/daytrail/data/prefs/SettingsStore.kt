@@ -85,6 +85,14 @@ class SettingsStore(
     val placesBackfillDone: Flow<Boolean> =
         context.dataStore.data.map { prefs -> prefs[KEY_PLACES_BACKFILL] ?: false }
 
+    /**
+     * 用户上次是否在记录（意图，不是运行状态）。
+     *
+     * 只用于开机提醒；界面的「记录中」仍然只看内存状态（4.11）。
+     */
+    val recordingIntent: Flow<Boolean> =
+        context.dataStore.data.map { prefs -> prefs[KEY_RECORDING_INTENT] ?: false }
+
     val onboardingCompleted: Flow<Boolean> =
         context.dataStore.data.map { prefs -> prefs[KEY_ONBOARDING_COMPLETED] ?: false }
 
@@ -110,6 +118,10 @@ class SettingsStore(
         context.dataStore.edit { prefs -> prefs[KEY_PLACES_BACKFILL] = true }
     }
 
+    suspend fun setRecordingIntent(enabled: Boolean) {
+        context.dataStore.edit { prefs -> prefs[KEY_RECORDING_INTENT] = enabled }
+    }
+
     suspend fun setOnboardingCompleted(completed: Boolean) {
         context.dataStore.edit { prefs -> prefs[KEY_ONBOARDING_COMPLETED] = completed }
     }
@@ -123,6 +135,7 @@ class SettingsStore(
         val KEY_LEARNING_ENABLED = booleanPreferencesKey("learning_enabled")
         val KEY_AUTO_SLEEP = booleanPreferencesKey("auto_sleep")
         val KEY_PLACES_BACKFILL = booleanPreferencesKey("places_backfill_done")
+        val KEY_RECORDING_INTENT = booleanPreferencesKey("recording_intent")
         val KEY_ONBOARDING_COMPLETED = booleanPreferencesKey("onboarding_completed")
         val KEY_THEME_MODE = intPreferencesKey("theme_mode")
     }

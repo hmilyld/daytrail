@@ -7,12 +7,14 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.hmilyld.daytrail.data.db.dao.DayGapDao
+import com.hmilyld.daytrail.data.db.dao.DiagnosticDao
 import com.hmilyld.daytrail.data.db.dao.PlaceDao
 import com.hmilyld.daytrail.data.db.dao.RouteOverrideDao
 import com.hmilyld.daytrail.data.db.dao.StaySegmentDao
 import com.hmilyld.daytrail.data.db.dao.TrackDayDao
 import com.hmilyld.daytrail.data.db.dao.TrackPointDao
 import com.hmilyld.daytrail.data.db.entity.DayGapEntity
+import com.hmilyld.daytrail.data.db.entity.DiagnosticEventEntity
 import com.hmilyld.daytrail.data.db.entity.PlaceEntity
 import com.hmilyld.daytrail.data.db.entity.RouteOverrideEntity
 import com.hmilyld.daytrail.data.db.entity.StaySegmentEntity
@@ -32,6 +34,7 @@ import com.hmilyld.daytrail.data.db.entity.TrackPointEntity
  * - v1：track_day / track_point / stay_segment / day_gap
  * - v2：新增 place（把多天的停留聚成「家」「公司」这类稳定地点）
  * - v3：新增 route_override（按需纠偏后的路线，派生数据）
+ * - v4：新增 diagnostic_event（诊断日志，只记决策不记坐标）
  */
 @Database(
     entities = [
@@ -41,8 +44,9 @@ import com.hmilyld.daytrail.data.db.entity.TrackPointEntity
         DayGapEntity::class,
         PlaceEntity::class,
         RouteOverrideEntity::class,
+        DiagnosticEventEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 abstract class DayTrailDatabase : RoomDatabase() {
@@ -57,6 +61,8 @@ abstract class DayTrailDatabase : RoomDatabase() {
     abstract fun placeDao(): PlaceDao
 
     abstract fun routeOverrideDao(): RouteOverrideDao
+
+    abstract fun diagnosticDao(): DiagnosticDao
 
     companion object {
         private const val NAME = "daytrail.db"
@@ -97,10 +103,28 @@ abstract class DayTrailDatabase : RoomDatabase() {
                 }
             }
 
+        /** v3 → v4：诊断日志表。 */
+        private val MIGRATION_3_4 =
+            object : Migration(3, 4) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL(
+                        "CREATE TABLE IF NOT EXISTS `diagnostic_event` (" +
+                            "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                            "`ts` INTEGER NOT NULL, " +
+                            "`category` TEXT NOT NULL, " +
+                            "`detail` TEXT NOT NULL)",
+                    )
+                    db.execSQL(
+                        "CREATE INDEX IF NOT EXISTS `index_diagnostic_event_ts` " +
+                            "ON `diagnostic_event` (`ts`)",
+                    )
+                }
+            }
+
         fun create(context: Context): DayTrailDatabase =
             Room
                 .databaseBuilder(context.applicationContext, DayTrailDatabase::class.java, NAME)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .build()
     }
 }

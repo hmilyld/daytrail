@@ -147,6 +147,17 @@ class PointFilterTest {
     }
 
     @Test
+    fun `a duplicate delivery within seconds is rejected`() {
+        // 实测：唤醒后 requestOnce 与常驻订阅几乎同时各给一个点，4 秒、45 米
+        val previous = sample(metersNorth = 0.0, secondsLater = 0)
+        val candidate = sample(metersNorth = 45.0, secondsLater = 4)
+
+        val verdict = filter.judge(previous, candidate)
+
+        assertEquals(FilterVerdict.Reject(RejectReason.WITHIN_NOISE), verdict)
+    }
+
+    @Test
     fun `normal movement is accepted`() {
         val previous = sample(metersNorth = 0.0, secondsLater = 0)
         // 60 秒走 200 米，约 12 km/h

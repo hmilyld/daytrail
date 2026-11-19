@@ -2,6 +2,7 @@ package com.hmilyld.daytrail
 
 import android.content.Context
 import com.hmilyld.daytrail.data.db.DayTrailDatabase
+import com.hmilyld.daytrail.data.diagnostics.DiagnosticLog
 import com.hmilyld.daytrail.data.export.ExportManager
 import com.hmilyld.daytrail.data.prefs.SettingsStore
 import com.hmilyld.daytrail.data.repo.LocalTrackRepository
@@ -37,6 +38,9 @@ class AppContainer(
 
     /** 轨迹纠偏客户端。只在用户点「补全路线」时发请求。 */
     val grasproadClient: GrasproadClient by lazy { GrasproadClient() }
+
+    /** 诊断日志。只记决策，不记坐标。 */
+    val diagnosticLog: DiagnosticLog by lazy { DiagnosticLog(database.diagnosticDao()) }
 
     /** 数据导出。用 SAF 让用户选择保存位置，不需要存储权限。 */
     val exportManager: ExportManager by lazy { ExportManager(appContext, trackRepository) }
