@@ -99,26 +99,32 @@ private fun MainShell(
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val wideLayout = maxWidth >= 600.dp
 
-        if (wideLayout && showNavigationArea) {
+        // 分支只看宽度，不看导航区是否显示。
+        // 早期写成 `wideLayout && showNavigationArea`，于是 >=600dp 上点全屏时
+        // immersive 一变就换了分支，NavHost 被销毁重建：地图重新创建、
+        // rememberSaveable 的展开状态丢失，全屏根本站不住。
+        if (wideLayout) {
             // 宽屏：左侧 NavigationRail + 内容区。
             // 没有 Scaffold，所以 insets 必须在这里显式消费，
             // 否则内容会顶到状态栏、被手势条遮住。
             Row(modifier = Modifier.fillMaxSize()) {
-                DayTrailRail(
-                    current = currentTopLevel,
-                    onSelect = { target -> backStack.navigateTopLevel(target.destination) },
-                )
+                if (showNavigationArea) {
+                    DayTrailRail(
+                        current = currentTopLevel,
+                        onSelect = { target -> backStack.navigateTopLevel(target.destination) },
+                    )
+                }
+                // 没有导航边栏时，左侧的挖孔要自己避开；有边栏时那一侧由它消费。
+                var insetSides =
+                    WindowInsetsSides.Top + WindowInsetsSides.End + WindowInsetsSides.Bottom
+                if (!showNavigationArea) {
+                    insetSides += WindowInsetsSides.Start
+                }
                 Box(
                     modifier =
                         Modifier
                             .fillMaxSize()
-                            .windowInsetsPadding(
-                                WindowInsets.safeDrawing.only(
-                                    WindowInsetsSides.Top +
-                                        WindowInsetsSides.End +
-                                        WindowInsetsSides.Bottom,
-                                ),
-                            ),
+                            .windowInsetsPadding(WindowInsets.safeDrawing.only(insetSides)),
                 ) {
                     NavHost(backStack = backStack, container = container)
                 }

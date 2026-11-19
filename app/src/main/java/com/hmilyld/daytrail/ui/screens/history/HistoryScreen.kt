@@ -253,9 +253,9 @@ private fun HistoryListPreview() {
                     monthlyKm = List(30) { if (it % 3 == 0) 40.0 else 0.0 },
                     days =
                         listOf(
-                            DayCard("2026-11-18", "11月18日", 18, "周二", 86.2),
-                            DayCard("2026-11-17", "11月17日", 17, "周一", 41.7),
-                            DayCard("2026-11-16", "11月16日", 16, "周日", 12.4),
+                            DayCard("2026-11-18", 18, "周二", 86.2),
+                            DayCard("2026-11-17", 17, "周一", 41.7),
+                            DayCard("2026-11-16", 16, "周日", 12.4),
                         ),
                     canGoNext = true,
                     monthTotalKm = 486.2,

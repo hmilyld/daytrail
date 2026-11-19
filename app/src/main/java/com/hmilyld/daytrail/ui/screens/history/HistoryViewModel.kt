@@ -6,7 +6,6 @@ import com.hmilyld.daytrail.core.DateLabels
 import com.hmilyld.daytrail.core.DayKey
 import com.hmilyld.daytrail.core.DayKeys
 import com.hmilyld.daytrail.core.DistanceFormat
-import com.hmilyld.daytrail.core.HeatLevel
 import com.hmilyld.daytrail.data.db.entity.TrackDayEntity
 import com.hmilyld.daytrail.data.repo.TrackRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -22,7 +21,6 @@ import java.time.YearMonth
 /** 历史页的一天。 */
 data class DayCard(
     val dateKey: String,
-    val title: String,
     /** 日号，列表左侧的大数字。 */
     val dayOfMonth: Int,
     /** `周二`。 */
@@ -125,7 +123,6 @@ class HistoryViewModel(
                     val date = runCatching { LocalDate.parse(row.dateKey) }.getOrNull()
                     DayCard(
                         dateKey = row.dateKey,
-                        title = date?.let(DateLabels::short) ?: row.dateKey,
                         dayOfMonth = date?.dayOfMonth ?: 0,
                         weekday = date?.let(DateLabels::weekday).orEmpty(),
                         distanceKm = row.distanceMeters / 1000.0,
@@ -150,10 +147,5 @@ class HistoryViewModel(
                     ""
                 },
         )
-    }
-
-    companion object {
-        /** 里程分档。与热力日历共用同一套阈值。 */
-        fun heatLevelOf(km: Double): Int = HeatLevel.of(km)
     }
 }

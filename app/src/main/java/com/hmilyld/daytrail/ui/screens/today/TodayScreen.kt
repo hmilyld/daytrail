@@ -53,6 +53,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -231,12 +233,15 @@ private fun TodayContent(
                 }
 
                 // 全屏时状态与提示必须留在图上：标题栏和提示条都被隐藏了。
+                // 这一列限宽：提示条是 fillMaxWidth 的，不限宽会横跨整屏、
+                // 把右上角的全屏和定位按钮盖住。
                 if (expanded) {
                     Column(
                         modifier =
                             Modifier
                                 .align(Alignment.TopStart)
-                                .padding(TrailSpacing.md),
+                                .padding(TrailSpacing.md)
+                                .widthIn(max = OVERLAY_NOTICE_MAX_WIDTH),
                         verticalArrangement = Arrangement.spacedBy(TrailSpacing.sm),
                     ) {
                         RecordingStatusChip(
@@ -463,45 +468,45 @@ private fun TodayTimelineCard(
     onOpenDay: () -> Unit,
 ) {
     val stayWord = stringResource(R.string.timeline_stay)
-    val stayMinutes = stringResource(R.string.timeline_stay_minutes)
     val startWord = stringResource(R.string.timeline_start)
 
-    val rows =
-        buildList {
-            state.startedAtLabel?.let { time ->
-                add(TodayRow(time, startWord, "", TimelineTone.START))
-            }
-            state.stays.forEach { stay ->
-                add(
-                    TodayRow(
-                        time = stay.startTimeLabel,
-                        title = stay.label ?: stayWord,
-                        detail = String.format(stayMinutes, stay.minutes),
-                        tone = TimelineTone.STAY,
-                    ),
-                )
-            }
-        }.takeLast(TIMELINE_PREVIEW_COUNT)
+    // 用 stringResource 的格式化重载，而不是 String.format(Locale.getDefault(), ...)：
+    // 后者在 composable 里读不到 Locale 的变化，lint 会直接判 error。
+    val rows = mutableListOf<TodayRow>()
+    state.startedAtLabel?.let { time ->
+        rows += TodayRow(time, startWord, "", TimelineTone.START)
+    }
+    state.stays.forEach { stay ->
+        rows +=
+            TodayRow(
+                time = stay.startTimeLabel,
+                title = stay.label ?: stayWord,
+                detail = stringResource(R.string.timeline_stay_minutes, stay.minutes),
+                tone = TimelineTone.STAY,
+            )
+    }
+    val visibleRows = rows.takeLast(TIMELINE_PREVIEW_COUNT)
 
     SectionCard(
         title = stringResource(R.string.today_timeline_title),
-        actionLabel = stringResource(R.string.action_all),
-        onAction = onOpenDay,
+        // 空状态下不给「全部」：点进去看到的是同一个空页面
+        actionLabel = if (visibleRows.isEmpty()) null else stringResource(R.string.action_all),
+        onAction = if (visibleRows.isEmpty()) null else onOpenDay,
     ) {
-        if (rows.isEmpty()) {
+        if (visibleRows.isEmpty()) {
             Text(
                 text = stringResource(R.string.timeline_empty),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         } else {
-            rows.forEachIndexed { index, row ->
+            visibleRows.forEachIndexed { index, row ->
                 TimelineRow(
                     time = row.time,
                     title = row.title,
                     detail = row.detail,
                     tone = row.tone,
-                    showConnector = index != rows.lastIndex,
+                    showConnector = index != visibleRows.lastIndex,
                 )
             }
         }
@@ -537,12 +542,19 @@ private fun SamplingCard(
     onToggle: () -> Unit,
     onSelect: (SamplingTier) -> Unit,
 ) {
+    val toggleLabel =
+        stringResource(if (expanded) R.string.action_collapse else R.string.action_expand)
+    val stateLabel =
+        stringResource(if (expanded) R.string.state_expanded else R.string.state_collapsed)
+
     SectionCard {
         Row(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .clickable(onClick = onToggle)
+                    // 折叠行要读出「可展开/已收起」，否则 TalkBack 只会念一遍当前档位
+                    .clickable(onClickLabel = toggleLabel, onClick = onToggle)
+                    .semantics { stateDescription = stateLabel }
                     .heightIn(min = 48.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -782,6 +794,14 @@ private const val TIMELINE_PREVIEW_COUNT = 3
 
 /** 进入全屏时换一个 fitKey，让轨迹重新缩放一次。 */
 private const val FULLSCREEN_FIT_KEY = "today-fullscreen"
+
+/**
+ * 全屏浮层里提示条的最大宽度。
+ *
+ * 右侧是两个 48dp 按钮 + 12dp 边距，占掉 72dp；提示条必须在这之前收住，
+ * 否则会压在按钮上。
+ */
+private val OVERLAY_NOTICE_MAX_WIDTH = 260.dp
 
 @Preview(showBackground = true, name = "今日 - 未开始")
 @Composable
