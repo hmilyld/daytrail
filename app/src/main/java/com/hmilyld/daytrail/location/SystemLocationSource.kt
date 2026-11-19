@@ -187,6 +187,24 @@ class SystemLocationSource(
                 runCatching { lm.getLastKnownLocation(provider) }.getOrNull()
             }.maxByOrNull { it.time }
 
+    /**
+     * 最近一次缓存位置。
+     *
+     * 不做新鲜度判断——调用方自己决定能不能用。地图页用它先把圆点画出来，
+     * 不必等一次真实定位（用户打开应用时要立刻看到自己在哪）。
+     */
+    @SuppressLint("MissingPermission")
+    fun lastKnownFix(): LocationFix? {
+        val lm = manager ?: return null
+        val providers =
+            listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+                .filter { provider ->
+                    runCatching { lm.isProviderEnabled(provider) }.getOrDefault(false)
+                }
+        if (providers.isEmpty()) return null
+        return newestCached(lm, providers)?.toFix()
+    }
+
     override fun release() = Unit
 
     /**

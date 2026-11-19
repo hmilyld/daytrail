@@ -47,7 +47,9 @@ import com.hmilyld.daytrail.R
 import com.hmilyld.daytrail.data.db.entity.DiagnosticEventEntity
 import com.hmilyld.daytrail.ui.appViewModelFactory
 import com.hmilyld.daytrail.ui.components.EmptyState
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -80,13 +82,16 @@ fun DiagnosticsScreen(
             uri ?: return@rememberLauncherForActivityResult
             scope.launch {
                 val json = viewModel.buildExport()
+                // 写文件放到 IO：这是 Main 作用域，StrictMode 会报磁盘写入
                 val ok =
-                    runCatching {
-                        context.contentResolver.openOutputStream(uri)?.use { stream ->
-                            stream.write(json.toByteArray(Charsets.UTF_8))
-                            stream.flush()
-                        } ?: error("无法打开目标文件")
-                    }.isSuccess
+                    withContext(Dispatchers.IO) {
+                        runCatching {
+                            context.contentResolver.openOutputStream(uri)?.use { stream ->
+                                stream.write(json.toByteArray(Charsets.UTF_8))
+                                stream.flush()
+                            } ?: error("无法打开目标文件")
+                        }.isSuccess
+                    }
                 if (!ok) Toast.makeText(context, exportFailed, Toast.LENGTH_SHORT).show()
             }
         }

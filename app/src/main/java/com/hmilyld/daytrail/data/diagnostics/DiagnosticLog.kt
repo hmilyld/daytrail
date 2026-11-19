@@ -2,6 +2,7 @@ package com.hmilyld.daytrail.data.diagnostics
 
 import com.hmilyld.daytrail.data.db.dao.DiagnosticDao
 import com.hmilyld.daytrail.data.db.entity.DiagnosticEventEntity
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import java.time.Instant
 import java.time.ZoneId
@@ -24,8 +25,7 @@ class DiagnosticLog(
         category: String,
         detail: String,
     ) {
-        // 诊断日志永远不能影响记录主流程：写失败就算了
-        runCatching {
+        try {
             val now = clock()
             dao.insert(
                 DiagnosticEventEntity(
@@ -35,6 +35,11 @@ class DiagnosticLog(
                 ),
             )
             dao.deleteBefore(now - RETENTION_MS)
+        } catch (cancelled: CancellationException) {
+            // 取消要原样抛出，否则会把外层的协程取消吞掉
+            throw cancelled
+        } catch (_: Exception) {
+            // 诊断日志永远不能影响记录主流程
         }
     }
 

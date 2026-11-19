@@ -195,6 +195,17 @@ class SamplingTempoTest {
     }
 
     @Test
+    fun `wake does not downgrade driving`() {
+        // 探针是异步的：回来时可能已经在开车，不能被 wake 压回 MOVING
+        tempo.observe(sample(0.0, 0), sample(1_200.0, 60))
+        assertEquals(TempoTier.DRIVING, tempo.tier)
+
+        tempo.wake(nowMs = 1_000_000L + 120 * 60_000L)
+
+        assertEquals(TempoTier.DRIVING, tempo.tier)
+    }
+
+    @Test
     fun `motion wake does not reset the still timer`() {
         stayStill(fromMinute = 0, toMinute = 70)
         assertEquals(TempoTier.SLEEP, tempo.tier)

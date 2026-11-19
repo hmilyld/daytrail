@@ -57,17 +57,19 @@ class ExportManager(
     private val context: Context,
     private val repository: TrackRepository,
 ) {
+    /** 范围内有数据的日期，升序。 */
+    private suspend fun dayKeys(range: ExportRange): List<DayKey> {
+        val all = repository.observeDaysWithDataFirst()
+        return when {
+            range.from == null || range.to == null -> all
+            else -> all.filter { it.value in range.from..range.to }
+        }
+    }
+
     /** 收集要导出的数据。默认导出全部。 */
     private suspend fun collect(range: ExportRange = ExportRange()): List<ExportDay> {
-        val all = repository.observeDaysWithDataFirst()
         val places = repository.observePlaces().first()
-        val keys =
-            when {
-                range.from == null || range.to == null -> all
-                else -> all.filter { it.value in range.from..range.to }
-            }
-
-        return keys
+        return dayKeys(range)
             .mapNotNull { key ->
                 val points = repository.pointsOfDay(key)
                 if (points.isEmpty()) return@mapNotNull null
@@ -98,14 +100,15 @@ class ExportManager(
             }.sortedBy { it.dateKey }
     }
 
-    /** 导出建议的文件名。 */
+    /** 导出建议的文件名。只查日期，不加载轨迹点。 */
     suspend fun suggestedName(
         format: ExportFormat,
         range: ExportRange = ExportRange(),
-    ): String {
-        val days = collect(range)
-        return TrackExport.suggestedFileName(days, format.extension)
-    }
+    ): String =
+        TrackExport.suggestedFileNameFromDates(
+            dates = dayKeys(range).map { it.value },
+            extension = format.extension,
+        )
 
     /**
      * 写入用户选定的文件。

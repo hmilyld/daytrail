@@ -327,9 +327,7 @@ class RecordingService : Service() {
             // 电梯、地库拿不到位置：不确定，先别睡，等下一次采样判断
             Log.d(TAG, "网络切换探针失败，进入守候窗口")
             log("probe", "探针失败，进入守候窗口")
-            tempo.watch(System.currentTimeMillis())
-            appContainer.recordingState.setSleeping(false)
-            sampleInterval.value = tempo.intervalMs
+            enterWatchWindow()
             return
         }
 
@@ -337,17 +335,43 @@ class RecordingService : Service() {
 
         val point = fix.toGcj02()
         val nearest = knownPlaces.minOfOrNull { place -> distanceMeters(place, point) }
-        if (nearest != null && nearest <= PROBE_RADIUS_METERS) {
-            Log.d(TAG, "网络切换后仍在地点内（${nearest.toInt()}m），进入守候窗口")
-            log("probe", "距地点 ${nearest.toInt()}m，进入守候窗口")
-            tempo.watch(System.currentTimeMillis())
-        } else {
-            Log.d(TAG, "网络切换后已离开地点，按出发处理")
-            log("probe", if (nearest == null) "没有已知地点，按出发处理" else "距地点 ${nearest.toInt()}m，按出发处理")
-            tempo.wake(System.currentTimeMillis())
+        val distanceText = nearest?.toInt()?.toString() ?: "未知"
+
+        when (PlaceProbe.decide(nearest)) {
+            ProbeAction.WATCH -> {
+                Log.d(TAG, "网络切换后仍在地点内（$distanceText m），进入守候窗口")
+                log("probe", "距地点 $distanceText m，进入守候窗口")
+                enterWatchWindow()
+            }
+
+            ProbeAction.WAKE -> {
+                Log.d(TAG, "网络切换后已离开地点，按出发处理")
+                log(
+                    "probe",
+                    if (nearest == null) "没有已知地点，按出发处理" else "距地点 $distanceText m，按出发处理",
+                )
+                tempo.wake(System.currentTimeMillis())
+                finishProbe()
+            }
         }
+    }
+
+    /** 守候：不唤醒，只保证 15 分钟内不睡。 */
+    private suspend fun enterWatchWindow() {
+        tempo.watch(System.currentTimeMillis())
+        finishProbe()
+    }
+
+    /**
+     * 探针之后的收尾。
+     *
+     * `onFix` 可能刚把通知改成「已休眠」，而 `watch()` 又把档位拉回静止档；
+     * 不刷新的话通知会停在错误的文案上，最长持续到下一个采样点（10 分钟）。
+     */
+    private suspend fun finishProbe() {
         appContainer.recordingState.setSleeping(false)
         sampleInterval.value = tempo.intervalMs
+        updateNotification()
     }
 
     private fun pauseRecording() {
@@ -693,9 +717,6 @@ class RecordingService : Service() {
 
         /** 网络探针的定位超时。拿不到就进入守候窗口，不重试。 */
         private const val NETWORK_PROBE_TIMEOUT_MS = 20_000L
-
-        /** 探针落点距地点锚点多少米以内算「还在原地」。比 120 米的归并半径宽。 */
-        private const val PROBE_RADIUS_METERS = 200.0
 
         /** 看门狗轮询间隔。 */
         private const val WATCHDOG_TICK_MS = 60_000L

@@ -262,4 +262,18 @@ class TrackExportTest {
     fun `file name falls back when empty`() {
         assertEquals("daytrail.gpx", TrackExport.suggestedFileName(emptyList(), "gpx"))
     }
+
+    @Test
+    fun `file name can be built from dates alone`() {
+        // 导出前先算文件名，不能为了它去加载轨迹点
+        assertEquals(
+            "daytrail-2026-11-14-2026-11-16.gpx",
+            TrackExport.suggestedFileNameFromDates(listOf("2026-11-14", "2026-11-16"), "gpx"),
+        )
+        assertEquals(
+            "daytrail-2026-11-14.gpx",
+            TrackExport.suggestedFileNameFromDates(listOf("2026-11-14"), "gpx"),
+        )
+        assertEquals("daytrail.gpx", TrackExport.suggestedFileNameFromDates(emptyList(), "gpx"))
+    }
 }

@@ -209,7 +209,10 @@ class SamplingTempo(
      * 否则在公司拿一次手机就等于重新开始计 15 分钟，一天都睡不了。
      */
     fun wake(nowMs: Long) {
-        tier = TempoTier.MOVING
+        // 只升不降：探针是异步的，回来时可能已经是 DRIVING
+        if (tier.ordinal > TempoTier.MOVING.ordinal) {
+            tier = TempoTier.MOVING
+        }
         slowerSinceMs = null
         motionUntilMs = nowMs + MOTION_WINDOW_MS
     }
