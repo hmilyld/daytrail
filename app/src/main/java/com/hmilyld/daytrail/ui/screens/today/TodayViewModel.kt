@@ -2,11 +2,17 @@ package com.hmilyld.daytrail.ui.screens.today
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.hmilyld.daytrail.core.DateLabels
 import com.hmilyld.daytrail.core.DayKey
 import com.hmilyld.daytrail.core.DistanceFormat
 import com.hmilyld.daytrail.core.GeoPoint
 import com.hmilyld.daytrail.core.formatDuration
+import com.hmilyld.daytrail.data.db.dao.PlaceSummary
+import com.hmilyld.daytrail.data.db.entity.StaySegmentEntity
+import com.hmilyld.daytrail.data.db.entity.TrackDayEntity
+import com.hmilyld.daytrail.data.db.entity.TrackPointEntity
 import com.hmilyld.daytrail.data.prefs.RecordingState
+import com.hmilyld.daytrail.data.prefs.SamplingTier
 import com.hmilyld.daytrail.data.prefs.SettingsStore
 import com.hmilyld.daytrail.data.repo.TrackRepository
 import com.hmilyld.daytrail.data.repo.toStaySegment
@@ -21,10 +27,22 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.time.LocalDate
+
+/** 今日行程里的一段停留。 */
+data class TodayStay(
+    /** 开始时间，`09:41`。 */
+    val startTimeLabel: String,
+    /** 地点名。没有命名的停留为 null，界面显示「停留」。 */
+    val label: String?,
+    val minutes: Int,
+)
 
 /** 今日页的界面状态。 */
 data class TodayUiState(
     val dayKey: DayKey,
+    /** `11月19日 星期四`。 */
+    val dateLabel: String = "",
     val recordingState: RecordingState = RecordingState.IDLE,
     val distanceKm: String = "0.0",
     val duration: String = "0m",
@@ -38,26 +56,18 @@ data class TodayUiState(
     val accessibilitySummary: String = "",
     /** 定位异常原因。非 null 表示采集已停止，界面应提示并给重试入口。 */
     val locationIssue: LocationFailureReason? = null,
-    /**
-     * 最近一个采样点（GCJ-02）。
-     *
-     * 记录中地图圆点跟着它走，不再自己每 15 秒请求一次定位——
-     * 那样既费电，也会让圆点和轨迹末端对不上。
-     */
+    /** 最近一个采样点（GCJ-02）。记录中地图图钉跟着它走。 */
     val lastFix: GeoPoint? = null,
-    /**
-     * 记录中但很久没有新点位。
-     *
-     * 与 [locationIssue] 不同：这不是失败，采集还在按间隔等，
-     * 只是要让用户知道「现在没有新数据」，而不是看着不变的数字以为一切正常。
-     */
+    /** 记录中但很久没有新点位。 */
     val fixStale: Boolean = false,
-    /**
-     * 已进入休眠：长时间不动，采样间隔降到 1 小时一次。
-     *
-     * 必须让用户看见，否则「点不再增加」会被当成记录断了。
-     */
+    /** 已进入休眠：采样间隔降到 1 小时一次。 */
     val sleeping: Boolean = false,
+    /** 采样档位。今日页可以直接改，不用跳到设置。 */
+    val samplingTier: SamplingTier = SamplingTier.POWER_SAVER,
+    /** 当天第一个点的时刻，`08:12`。没有点时为 null。 */
+    val startedAtLabel: String? = null,
+    /** 当天停留，按时间正序。今日行程卡只展示最后几条。 */
+    val stays: List<TodayStay> = emptyList(),
 )
 
 /**
@@ -65,9 +75,6 @@ data class TodayUiState(
  *
  * 数据流：Room 的 Flow → 界面状态。用 Flow 而不是一次性读取，
  * 这样采集服务写入后界面会自动刷新，不需要手动触发。
- *
- * 轨迹点直接订阅 Room：采样间隔是分钟级、刷盘是 60 秒一次，
- * 刷新频率很低，一天的几百个点重发一次成本可接受。
  */
 class TodayViewModel(
     private val repository: TrackRepository,
@@ -78,8 +85,6 @@ class TodayViewModel(
 
     init {
         // 从 v1 升级上来时历史停留没有地点归属，补一次就够。
-        // 用持久标志而不是「地点表是否为空」：从来没有长停留的用户地点表永远是空的，
-        // 那样每次启动都会把所有日期重算一遍。
         viewModelScope.launch {
             if (!settingsStore.placesBackfillDone.first()) {
                 repository.backfillPlaces()
@@ -96,55 +101,102 @@ class TodayViewModel(
             repository.observePoints(dayKey),
             repository.observeStays(dayKey),
         ) { state, lastFix, day, points, stays ->
-            TodayUiState(
-                dayKey = dayKey,
-                recordingState = state,
-                lastFix = lastFix,
-                distanceKm = formatKm(day?.distanceMeters ?: 0.0),
-                duration =
-                    formatDuration(
-                        ((day?.movingMillis ?: 0L) + (day?.stoppedMillis ?: 0L)) / 1000,
-                    ),
-                stopCount = stays.size,
-                pointCount = points.size,
-                // 关键：把真实坐标传给地图，录制过程中才能画出轨迹。
-                // 精度过滤、毛刺修复、停留吸附、按「时间 + 位移」切段都在 TrackDisplay 里，
-                // 今日页和单日详情共用同一套，避免两处画出来的线不一样。
-                trackSegments =
-                    TrackDisplay.segments(
-                        points.map { entity ->
-                            TrackPointSample(
-                                timestampMs = entity.timestampMs,
-                                point = GeoPoint(entity.latitude, entity.longitude),
-                                accuracyMeters = entity.accuracyMeters,
-                            )
-                        },
-                        stays.map { it.toStaySegment() },
-                    ),
-                stayMarkers =
-                    stays
-                        .filter { it.endMs - it.startMs >= TrackDisplay.MIN_STAY_MARKER_MS }
-                        .map { stay -> GeoPoint(stay.latitude, stay.longitude) },
-                accessibilitySummary =
-                    if (points.isEmpty()) {
-                        ""
-                    } else if (stays.isEmpty()) {
-                        "轨迹地图，今日共 ${points.size} 个采样点"
-                    } else {
-                        "轨迹地图，今日 ${stays.size} 处停留，共 ${points.size} 个采样点"
-                    },
-            )
+            TodaySource(state = state, lastFix = lastFix, day = day, points = points, stays = stays)
+        }.combine(repository.observePlaces()) { source, places ->
+            buildState(source, places)
         }.combine(recordingState.locationIssue) { state, issue ->
             state.copy(locationIssue = issue)
         }.combine(recordingState.fixStale) { state, stale ->
             state.copy(fixStale = stale)
         }.combine(recordingState.sleeping) { state, sleeping ->
             state.copy(sleeping = sleeping)
+        }.combine(settingsStore.samplingTier) { state, tier ->
+            state.copy(samplingTier = tier)
         }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5_000),
             initialValue = TodayUiState(dayKey = dayKey),
         )
+
+    /** 切采样档位。录制中的服务会立即读到新值，不需要重启服务。 */
+    fun setSamplingTier(tier: SamplingTier) {
+        viewModelScope.launch { settingsStore.setSamplingTier(tier) }
+    }
+
+    private data class TodaySource(
+        val state: RecordingState,
+        val lastFix: GeoPoint?,
+        val day: TrackDayEntity?,
+        val points: List<TrackPointEntity>,
+        val stays: List<StaySegmentEntity>,
+    )
+
+    private fun buildState(
+        source: TodaySource,
+        places: List<PlaceSummary>,
+    ): TodayUiState {
+        val day = source.day
+        val points = source.points
+        val stays = source.stays
+        val startedAt = points.minOfOrNull { it.timestampMs }
+
+        return TodayUiState(
+            dayKey = dayKey,
+            dateLabel =
+                runCatching {
+                    DateLabels.full(
+                        LocalDate.parse(dayKey.value),
+                    )
+                }.getOrDefault(""),
+            recordingState = source.state,
+            lastFix = source.lastFix,
+            distanceKm = formatKm(day?.distanceMeters ?: 0.0),
+            duration =
+                formatDuration(
+                    ((day?.movingMillis ?: 0L) + (day?.stoppedMillis ?: 0L)) / 1000,
+                ),
+            stopCount = stays.size,
+            pointCount = points.size,
+            // 精度过滤、毛刺修复、停留吸附、按「时间 + 位移」切段都在 TrackDisplay 里，
+            // 今日页和单日详情共用同一套，避免两处画出来的线不一样。
+            trackSegments =
+                TrackDisplay.segments(
+                    points.map { entity ->
+                        TrackPointSample(
+                            timestampMs = entity.timestampMs,
+                            point = GeoPoint(entity.latitude, entity.longitude),
+                            accuracyMeters = entity.accuracyMeters,
+                        )
+                    },
+                    stays.map { it.toStaySegment() },
+                ),
+            stayMarkers =
+                stays
+                    .filter { it.endMs - it.startMs >= TrackDisplay.MIN_STAY_MARKER_MS }
+                    .map { stay -> GeoPoint(stay.latitude, stay.longitude) },
+            accessibilitySummary =
+                if (points.isEmpty()) {
+                    ""
+                } else if (stays.isEmpty()) {
+                    "轨迹地图，今日共 ${points.size} 个采样点"
+                } else {
+                    "轨迹地图，今日 ${stays.size} 处停留，共 ${points.size} 个采样点"
+                },
+            startedAtLabel = startedAt?.let(DateLabels::time),
+            stays =
+                stays.map { stay ->
+                    TodayStay(
+                        startTimeLabel = DateLabels.time(stay.startMs),
+                        label = stay.placeLabel(places),
+                        minutes = ((stay.endMs - stay.startMs) / 60_000L).toInt(),
+                    )
+                },
+        )
+    }
+
+    /** 停留的地点名。没命名过就返回 null，由界面显示「停留」。 */
+    private fun StaySegmentEntity.placeLabel(places: List<PlaceSummary>): String? =
+        placeId?.let { id -> places.firstOrNull { it.place.id == id }?.place?.label }
 
     companion object {
         /** 里程格式化。统一走 [DistanceFormat]，避免三处显示不一致。 */

@@ -39,6 +39,7 @@
     <string name="history_legend_more">多</string>
 
     <!-- 单日详情 -->
+    <string name="day_detail_stops">%1$d 处停留</string>
 
     <!-- 行程 -->
     <string name="trip_title">行程</string>
@@ -79,6 +80,7 @@
     <!-- 地点 -->
     <string name="places_title">地点</string>
     <string name="places_empty">还没有识别到地点。在某处停留 8 分钟以上，会自动记成一个地点。</string>
+    <string name="places_empty_title">还没有地点</string>
     <string name="places_unnamed">未命名地点</string>
     <string name="places_visit_days">去过 %1$d 天</string>
     <string name="places_delete">删除地点</string>
@@ -213,4 +215,48 @@
     <string name="settings_clear_all">清除全部数据</string>
     <string name="settings_clear_confirm_title">确认清除？</string>
     <string name="settings_clear_confirm_body">清除后无法恢复，且不会同步到任何地方。</string>
+
+    <!-- 通用单位与动作 -->
+    <string name="unit_km">km</string>
+    <string name="action_all">全部</string>
+
+    <!-- 热力日历 -->
+    <string name="heat_calendar_summary">%1$d 年 %2$d 月，共 %3$d 天有记录</string>
+    <string name="day_row_spoken">%1$s，%2$d 日，%3$s 公里</string>
+
+    <!-- 时间轴 -->
+    <string name="timeline_stay">停留</string>
+    <string name="timeline_stay_minutes">停留 %1$d 分钟</string>
+    <string name="timeline_start">开始记录</string>
+    <string name="timeline_end">结束记录</string>
+    <string name="timeline_empty">还没有行程记录</string>
+
+    <!-- 今日（重构） -->
+    <string name="today_samples">%1$d 个采样点</string>
+    <string name="today_timeline_title">今日行程</string>
+    <string name="today_sampling_title">采样间隔</string>
+    <string name="today_sampling_hint">记录中修改会立即生效</string>
+    <string name="tier_power_short">省电优先 · 静止 10 分钟</string>
+    <string name="tier_balanced_short">平衡 · 静止 5 分钟</string>
+    <string name="tier_high_short">高精度 · 静止 2 分钟</string>
+    <string name="tier_power">省电</string>
+    <string name="tier_balanced">平衡</string>
+    <string name="tier_high">高精度</string>
+    <string name="map_fullscreen">全屏查看地图</string>
+    <string name="map_exit_fullscreen">退出全屏</string>
+    <string name="today_map_empty_title">今天还没有轨迹</string>
+    <string name="today_map_empty_body">点下方「开始记录」，行迹会在后台记下走过的地方。</string>
+
+    <!-- 历史（重构） -->
+    <string name="history_days_title">每天</string>
+    <string name="history_active_days">%1$d 天有记录</string>
+    <string name="history_daily_average">日均 %1$s km</string>
+
+    <!-- 我的 -->
+    <string name="nav_me">我的</string>
+    <string name="mine_overview">概览</string>
+    <string name="mine_permission_ok">权限全部就绪</string>
+    <string name="mine_permission_issue">有权限未就绪，可能影响记录</string>
+    <string name="mine_section_recording">记录</string>
+    <string name="mine_section_data">数据</string>
 </resources>

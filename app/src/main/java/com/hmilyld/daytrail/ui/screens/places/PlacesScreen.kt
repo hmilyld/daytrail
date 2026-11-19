@@ -42,6 +42,7 @@ import com.hmilyld.daytrail.AppContainer
 import com.hmilyld.daytrail.R
 import com.hmilyld.daytrail.data.db.dao.PlaceSummary
 import com.hmilyld.daytrail.ui.appViewModelFactory
+import com.hmilyld.daytrail.ui.components.EmptyState
 import java.time.Instant
 import java.time.ZoneId
 
@@ -55,10 +56,11 @@ import java.time.ZoneId
 @Composable
 fun PlacesScreen(
     container: AppContainer,
-    onBack: () -> Unit,
     onOpenPlace: (Long) -> Unit,
     onAddPlace: () -> Unit,
     modifier: Modifier = Modifier,
+    /** 一级入口进入时为 null：没有「上一页」可回。 */
+    onBack: (() -> Unit)? = null,
 ) {
     val viewModel: PlacesViewModel = viewModel(factory = appViewModelFactory(container))
     val places by viewModel.places.collectAsStateWithLifecycle()
@@ -69,11 +71,13 @@ fun PlacesScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.places_title)) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                            contentDescription = stringResource(R.string.action_back),
-                        )
+                    if (onBack != null) {
+                        IconButton(onClick = onBack) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
+                                contentDescription = stringResource(R.string.action_back),
+                            )
+                        }
                     }
                 },
             )
@@ -94,11 +98,11 @@ fun PlacesScreen(
             contentAlignment = if (places.isEmpty()) Alignment.Center else Alignment.TopCenter,
         ) {
             if (places.isEmpty()) {
-                Text(
-                    text = stringResource(R.string.places_empty),
-                    modifier = Modifier.padding(24.dp),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                EmptyState(
+                    icon = Icons.Outlined.Place,
+                    title = stringResource(R.string.places_empty_title),
+                    body = stringResource(R.string.places_empty),
+                    modifier = Modifier.fillMaxSize(),
                 )
             } else {
                 LazyColumn(

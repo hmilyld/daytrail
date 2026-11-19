@@ -3,6 +3,7 @@ package com.hmilyld.daytrail.ui.components.map
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Path
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -90,7 +91,8 @@ fun CurrentLocationMarker(
                         MarkerOptions()
                             .position(position)
                             .icon(icon)
-                            .anchor(0.5f, 0.5f)
+                            // 图钉的尖角对准坐标点，不是图片中心
+                            .anchor(0.5f, LOCATION_ICON_ANCHOR_Y)
                             // 不参与点击，避免遮挡停留点
                             .zIndex(20f),
                     )
@@ -174,34 +176,53 @@ private const val IDLE_REFRESH_MS = 60_000L
 private const val INITIAL_ZOOM = 17f
 
 /**
- * 用代码绘制定位图标：蓝色实心圆 + 白色描边 + 白色中心点。
+ * 用代码绘制定位图标：水滴形图钉 + 白色描边 + 白色中心点。
  *
- * 为什么不用高德的 `defaultMarker`：那是水滴形图钉，当前位置用圆点
- * 更符合地图惯例，也不会和停留点混淆。
+ * 早期画的是实心圆点，蓝色圆点在地图上和「停留点」「采样点」太像，
+ * 用户很难一眼找到自己。水滴图钉是各家地图的通用语义：
+ * 尖角所在的位置就是「我现在在这里」。
+ *
+ * 停留点、起终点仍然是圆点（`MapIcons.dot`），所以两者不会混。
  *
  * 颜色由调用方从 `colorScheme` 传进来，不在页面里写十六进制。
  */
 private fun createLocationIcon(color: Int): BitmapDescriptor {
-    val size = 64
-    val bitmap = createBitmap(size, size)
+    val width = 64
+    val height = 80
+    val bitmap = createBitmap(width, height)
     val canvas = Canvas(bitmap)
-    val center = size / 2f
 
-    // 外圈白色描边：深色地图上保证可见
-    val strokePaint =
+    val centerX = width / 2f
+    val centerY = 28f
+    val radius = 18f
+    val tipY = 76f
+
+    // 圆头 + 收拢的尾巴，构成一个完整的水滴
+    val path =
+        Path().apply {
+            addCircle(centerX, centerY, radius, Path.Direction.CW)
+            moveTo(centerX, tipY)
+            lineTo(centerX - radius * 0.62f, centerY + radius * 0.82f)
+            lineTo(centerX + radius * 0.62f, centerY + radius * 0.82f)
+            close()
+        }
+
+    // 白色描边：深色底图上也能看清轮廓
+    val outlinePaint =
         Paint(Paint.ANTI_ALIAS_FLAG).apply {
             this.color = Color.WHITE
-            style = Paint.Style.FILL
+            style = Paint.Style.FILL_AND_STROKE
+            strokeWidth = 6f
+            strokeJoin = Paint.Join.ROUND
         }
-    canvas.drawCircle(center, center - 2f, 20f, strokePaint)
+    canvas.drawPath(path, outlinePaint)
 
-    // 实心圆
     val fillPaint =
         Paint(Paint.ANTI_ALIAS_FLAG).apply {
             this.color = color
             style = Paint.Style.FILL
         }
-    canvas.drawCircle(center, center - 2f, 15f, fillPaint)
+    canvas.drawPath(path, fillPaint)
 
     // 中心白点：指示精确位置
     val dotPaint =
@@ -209,7 +230,13 @@ private fun createLocationIcon(color: Int): BitmapDescriptor {
             this.color = Color.WHITE
             style = Paint.Style.FILL
         }
-    canvas.drawCircle(center, center - 2f, 5f, dotPaint)
+    canvas.drawCircle(centerX, centerY - 1f, 6.5f, dotPaint)
 
     return BitmapDescriptorFactory.fromBitmap(bitmap)
 }
+
+/**
+ * 图钉尖角在图片里的纵向位置（76/80）。
+ * 锚点取 1.0 会把尖角下方的 4px 留白也算进去，坐标看起来会偏北。
+ */
+private const val LOCATION_ICON_ANCHOR_Y = 0.95f

@@ -2,8 +2,11 @@ package com.hmilyld.daytrail.ui.screens.history
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.hmilyld.daytrail.core.DateLabels
 import com.hmilyld.daytrail.core.DayKey
 import com.hmilyld.daytrail.core.DayKeys
+import com.hmilyld.daytrail.core.DistanceFormat
+import com.hmilyld.daytrail.core.HeatLevel
 import com.hmilyld.daytrail.data.db.entity.TrackDayEntity
 import com.hmilyld.daytrail.data.repo.TrackRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -16,12 +19,15 @@ import kotlinx.coroutines.flow.stateIn
 import java.time.LocalDate
 import java.time.YearMonth
 
-/** 历史页的日卡片。 */
+/** 历史页的一天。 */
 data class DayCard(
     val dateKey: String,
     val title: String,
+    /** 日号，列表左侧的大数字。 */
+    val dayOfMonth: Int,
+    /** `周二`。 */
+    val weekday: String,
     val distanceKm: Double,
-    val heatLevel: Int,
 )
 
 /** 历史页状态。 */
@@ -36,6 +42,10 @@ data class HistoryUiState(
     val canGoNext: Boolean = false,
     /** 当月总里程，展示用。 */
     val monthTotalKm: Double = 0.0,
+    /** 有记录的天数。 */
+    val activeDays: Int = 0,
+    /** 有记录时的日均里程，`25.6`。没有记录时为空串。 */
+    val averageKm: String = "",
 )
 
 /**
@@ -115,11 +125,15 @@ class HistoryViewModel(
                     val date = runCatching { LocalDate.parse(row.dateKey) }.getOrNull()
                     DayCard(
                         dateKey = row.dateKey,
-                        title = date?.let { "${it.monthValue}月${it.dayOfMonth}日" } ?: row.dateKey,
+                        title = date?.let(DateLabels::short) ?: row.dateKey,
+                        dayOfMonth = date?.dayOfMonth ?: 0,
+                        weekday = date?.let(DateLabels::weekday).orEmpty(),
                         distanceKm = row.distanceMeters / 1000.0,
-                        heatLevel = heatLevelOf(row.distanceMeters / 1000.0),
                     )
                 }
+
+        val totalKm = monthlyKm.sum()
+        val activeDays = monthlyKm.count { it > 0.0 }
 
         return HistoryUiState(
             year = month.year,
@@ -127,41 +141,19 @@ class HistoryViewModel(
             monthlyKm = monthlyKm,
             days = days,
             canGoNext = month < currentMonth,
-            monthTotalKm = monthlyKm.sum(),
+            monthTotalKm = totalKm,
+            activeDays = activeDays,
+            averageKm =
+                if (activeDays > 0) {
+                    DistanceFormat.kilometers(totalKm * 1000.0 / activeDays)
+                } else {
+                    ""
+                },
         )
     }
 
     companion object {
-        /** 里程分档。阈值按出差日的典型里程设定。 */
-        fun heatLevelOf(km: Double): Int =
-            when {
-                km <= 0.0 -> 0
-                km < 10.0 -> 1
-                km < 30.0 -> 2
-                km < 60.0 -> 3
-                else -> 4
-            }
-
-        /**
-         * 当月 1 号是周几之前需要留白的格子数（周一为一周起点）。
-         *
-         * 用 `value - 1`：DayOfWeek.MONDAY=1 … SUNDAY=7。
-         */
-        fun leadingBlanks(
-            year: Int,
-            month: Int,
-        ): Int {
-            val first = LocalDate.of(year, month, 1)
-            return first.dayOfWeek.value - 1
-        }
-
-        /** 当月需要显示的总格子数，向上取整到整周。 */
-        fun cellCount(
-            year: Int,
-            month: Int,
-        ): Int {
-            val total = leadingBlanks(year, month) + LocalDate.of(year, month, 1).lengthOfMonth()
-            return ((total + 6) / 7) * 7
-        }
+        /** 里程分档。与热力日历共用同一套阈值。 */
+        fun heatLevelOf(km: Double): Int = HeatLevel.of(km)
     }
 }

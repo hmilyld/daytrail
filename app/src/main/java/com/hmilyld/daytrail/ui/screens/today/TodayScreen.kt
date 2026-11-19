@@ -1,8 +1,12 @@
 package com.hmilyld.daytrail.ui.screens.today
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -11,65 +15,89 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.CornerSize
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.outlined.Bedtime
+import androidx.compose.material.icons.outlined.ExpandLess
+import androidx.compose.material.icons.outlined.ExpandMore
+import androidx.compose.material.icons.outlined.Fullscreen
+import androidx.compose.material.icons.outlined.FullscreenExit
 import androidx.compose.material.icons.outlined.LocationOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.amap.api.maps.AMap
 import com.hmilyld.daytrail.AppContainer
 import com.hmilyld.daytrail.R
+import com.hmilyld.daytrail.core.DayKey
 import com.hmilyld.daytrail.data.prefs.RecordingState
+import com.hmilyld.daytrail.data.prefs.SamplingTier
 import com.hmilyld.daytrail.location.LocationFailureReason
 import com.hmilyld.daytrail.location.RecordingService
 import com.hmilyld.daytrail.ui.appViewModelFactory
+import com.hmilyld.daytrail.ui.components.CalloutBanner
+import com.hmilyld.daytrail.ui.components.CalloutTone
 import com.hmilyld.daytrail.ui.components.MapAccessibilityOverlay
-import com.hmilyld.daytrail.ui.components.StatBlock
+import com.hmilyld.daytrail.ui.components.Metric
+import com.hmilyld.daytrail.ui.components.MetricRow
+import com.hmilyld.daytrail.ui.components.RecordingStatusChip
+import com.hmilyld.daytrail.ui.components.SectionCard
+import com.hmilyld.daytrail.ui.components.TimelineRow
+import com.hmilyld.daytrail.ui.components.TimelineTone
 import com.hmilyld.daytrail.ui.components.map.AmapView
 import com.hmilyld.daytrail.ui.components.map.CurrentLocationMarker
 import com.hmilyld.daytrail.ui.components.map.LocateButton
+import com.hmilyld.daytrail.ui.components.map.MapControlButton
 import com.hmilyld.daytrail.ui.components.map.MapUnavailablePlaceholder
 import com.hmilyld.daytrail.ui.components.map.TrackOverlay
 import com.hmilyld.daytrail.ui.components.map.rememberAmapAvailable
+import com.hmilyld.daytrail.ui.components.trailSegmentedColors
 import com.hmilyld.daytrail.ui.theme.DayTrailTheme
+import com.hmilyld.daytrail.ui.theme.TrailSpacing
 
 /**
- * 今日页：地图优先布局。
+ * 今日页。
  *
- * 结构（自上而下）：
- * 1. 全屏地图（占满剩余空间）
- * 2. 悬浮状态胶囊（左上角，避开状态栏）
- * 3. 底部统计面板（里程 / 时长 / 停留 + 控制按钮）
+ * 结构（自上而下）：标题与状态 → 提示条 → 地图卡 → 可滚动的统计 / 行程 / 采样
+ * → 底部控制条。
+ *
+ * 地图固定在上方而不跟随滚动：这是地图类应用，用户滚动查看统计时
+ * 不该把「我在哪、今天走了哪」滚出屏幕。
+ *
+ * 全屏查看时整块地图铺满可视区域，并把底部导航栏一起让开
+ * （`ChromeState`），否则「全屏」只是把地图拉高一点。
  */
 @Composable
 fun TodayScreen(
@@ -87,6 +115,9 @@ fun TodayScreen(
         onPause = { RecordingService.pause(context) },
         onStop = { RecordingService.stop(context) },
         onRetry = { RecordingService.retry(context) },
+        onOpenDay = { onOpenDay(state.dayKey.value) },
+        onSamplingTier = viewModel::setSamplingTier,
+        onImmersiveChange = container.chrome::setImmersive,
         modifier = modifier,
     )
 }
@@ -98,308 +129,608 @@ private fun TodayContent(
     onPause: () -> Unit,
     onStop: () -> Unit,
     onRetry: () -> Unit,
+    onOpenDay: () -> Unit,
+    onSamplingTier: (SamplingTier) -> Unit,
     modifier: Modifier = Modifier,
+    onImmersiveChange: (Boolean) -> Unit = {},
 ) {
     val mapAvailable = rememberAmapAvailable()
     var amap by remember { mutableStateOf<AMap?>(null) }
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    var tierExpanded by rememberSaveable { mutableStateOf(false) }
+    val scrollState = rememberScrollState()
     val polylineColor = MaterialTheme.colorScheme.primary.toArgb()
+    val recording = state.recordingState == RecordingState.RECORDING
 
-    // 上下分区，而不是把面板浮在地图上：
-    // 面板直接坐在底部导航栏上方，地图到面板上沿为止。
-    // 面板若继续用四角圆角，底部两个圆角会紧贴导航栏，看起来像「缺了一块」。
-    Column(modifier = modifier.fillMaxSize()) {
-        Box(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-        ) {
-            if (mapAvailable) {
-                AmapView(
-                    modifier = Modifier.fillMaxSize(),
-                    onMapCreated = { map -> amap = map },
-                )
-                // 当前位置标记：自己画，不依赖高德定位 SDK 的蓝点。
-                // 首次定位自动居中，打开应用就能看到自己在哪。
-                CurrentLocationMarker(
-                    amap = amap,
-                    recording = state.recordingState == RecordingState.RECORDING,
-                    lastKnownFix = state.lastFix,
-                )
-                TrackOverlay(
-                    amap = amap,
-                    segments = state.trackSegments,
-                    stays = state.stayMarkers,
-                    polylineColor = polylineColor,
-                    // 录制中不缩放：轨迹每分钟更新，每次缩放都会把用户拖动的地图
-                    // 反复拽回。停止记录后再缩一次，让整条轨迹落在屏幕里。
-                    autoFit = state.recordingState != RecordingState.RECORDING,
-                    fitKey = state.pointCount,
-                )
-            } else {
-                MapUnavailablePlaceholder(modifier = Modifier.fillMaxSize())
+    // 档位卡在指标下面，展开不会把自己顶出视野，所以不需要额外滚动。
+
+    // 全屏期间让外壳把导航栏收起来；离开页面必须复位，
+    // 否则返回列表页后底部导航会一直消失。
+    LaunchedEffect(expanded) { onImmersiveChange(expanded) }
+    DisposableEffect(Unit) { onDispose { onImmersiveChange(false) } }
+    BackHandler(enabled = expanded) { expanded = false }
+
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+        val mapHeight: Dp =
+            (maxHeight * MAP_HEIGHT_FRACTION)
+                .coerceIn(MAP_MIN_HEIGHT, MAP_MAX_HEIGHT)
+
+        Column(modifier = Modifier.fillMaxSize()) {
+            if (!expanded) {
+                TodayHeader(state = state)
+                RecordingNotices(state = state, onRetry = onRetry)
             }
 
-            // 记录状态 + 「暂时没有新定位」放在同一列：
-            // 后者是前者的补充说明，粘在一起比各自飘在屏幕上更好读。
-            Column(
+            Box(
                 modifier =
                     Modifier
-                        .align(Alignment.TopStart)
-                        .padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                        .fillMaxWidth()
+                        .then(
+                            if (expanded) {
+                                Modifier.weight(1f)
+                            } else {
+                                Modifier
+                                    .padding(horizontal = TrailSpacing.gutter)
+                                    .height(mapHeight)
+                                    .clip(MaterialTheme.shapes.medium)
+                            },
+                        ),
             ) {
-                RecordingPill(
-                    state = state.recordingState,
-                    duration = state.duration,
-                )
-                if (state.sleeping && state.recordingState == RecordingState.RECORDING) {
-                    SleepingHint()
-                } else if (state.fixStale && state.recordingState == RecordingState.RECORDING) {
-                    StaleFixHint()
+                if (mapAvailable) {
+                    AmapView(
+                        modifier = Modifier.fillMaxSize(),
+                        onMapCreated = { map -> amap = map },
+                    )
+                    CurrentLocationMarker(
+                        amap = amap,
+                        recording = recording,
+                        lastKnownFix = state.lastFix,
+                    )
+                    TrackOverlay(
+                        amap = amap,
+                        segments = state.trackSegments,
+                        stays = state.stayMarkers,
+                        polylineColor = polylineColor,
+                        // 录制中不自动缩放（轨迹每分钟更新，会把用户拖动的地图反复拽回）；
+                        // 进入全屏时缩一次，让整条轨迹落进更大的画布。
+                        autoFit = !recording || expanded,
+                        fitKey = if (expanded) FULLSCREEN_FIT_KEY else state.pointCount,
+                    )
+                } else {
+                    MapUnavailablePlaceholder(modifier = Modifier.fillMaxSize())
                 }
-            }
 
-            // 定位按钮：地图右上角，与状态胶囊同一行
-            if (mapAvailable) {
-                LocateButton(
-                    amap = amap,
+                // 右上角：全屏 / 回到当前位置。两个都是 48dp 触达目标。
+                Column(
                     modifier =
                         Modifier
                             .align(Alignment.TopEnd)
-                            .padding(12.dp),
-                )
-            }
+                            .padding(TrailSpacing.md),
+                    verticalArrangement = Arrangement.spacedBy(TrailSpacing.sm),
+                ) {
+                    MapControlButton(
+                        icon =
+                            if (expanded) {
+                                Icons.Outlined.FullscreenExit
+                            } else {
+                                Icons.Outlined.Fullscreen
+                            },
+                        contentDescription =
+                            stringResource(
+                                if (expanded) {
+                                    R.string.map_exit_fullscreen
+                                } else {
+                                    R.string.map_fullscreen
+                                },
+                            ),
+                        onClick = { expanded = !expanded },
+                    )
+                    if (mapAvailable) {
+                        LocateButton(amap = amap)
+                    }
+                }
 
-            // 地图的文字版概要：折线对读屏不可用，必须给等价信息
-            MapAccessibilityOverlay(
-                text = state.accessibilitySummary,
-                modifier =
-                    Modifier
-                        .align(Alignment.BottomStart)
-                        .padding(12.dp),
-            )
+                // 全屏时状态与提示必须留在图上：标题栏和提示条都被隐藏了。
+                if (expanded) {
+                    Column(
+                        modifier =
+                            Modifier
+                                .align(Alignment.TopStart)
+                                .padding(TrailSpacing.md),
+                        verticalArrangement = Arrangement.spacedBy(TrailSpacing.sm),
+                    ) {
+                        RecordingStatusChip(
+                            state = state.recordingState,
+                            duration =
+                                if (state.recordingState == RecordingState.IDLE) {
+                                    null
+                                } else {
+                                    state.duration
+                                },
+                        )
+                        if (state.sleeping && recording) {
+                            CalloutBanner(
+                                text = stringResource(R.string.today_sleeping_hint),
+                                tone = CalloutTone.INFO,
+                                icon = Icons.Outlined.Bedtime,
+                            )
+                        } else if (state.fixStale && recording) {
+                            CalloutBanner(
+                                text = stringResource(R.string.today_fix_stale),
+                                tone = CalloutTone.WARNING,
+                                icon = Icons.Outlined.LocationOff,
+                            )
+                        }
+                    }
+                }
 
-            // 空状态：未开始记录且没有数据时给一句提示，避免一片空地
-            if (state.pointCount == 0 && state.recordingState == RecordingState.IDLE) {
-                EmptyHintCard(
-                    title = stringResource(R.string.today_empty_title),
-                    body = stringResource(R.string.today_empty_body),
-                    modifier = Modifier.align(Alignment.Center),
-                )
-            }
-
-            // 定位异常：采集已停止，明确告知原因并给一键重试
-            state.locationIssue?.let { issue ->
-                LocationIssueBanner(
-                    reason = issue,
-                    onRetry = onRetry,
+                // 地图对读屏不可用，必须给等价文字
+                MapAccessibilityOverlay(
+                    text = state.accessibilitySummary,
                     modifier =
                         Modifier
-                            .align(Alignment.BottomCenter)
-                            .padding(12.dp),
+                            .align(Alignment.BottomStart)
+                            .padding(TrailSpacing.md),
+                )
+
+                // 空状态：未开始且没有任何点时给一句话，避免一片空地。
+                // 地图不可用时不再叠加：占位说明本身已经写清了原因。
+                if (mapAvailable &&
+                    !expanded &&
+                    state.pointCount == 0 &&
+                    state.recordingState == RecordingState.IDLE
+                ) {
+                    EmptyMapHint(
+                        title = stringResource(R.string.today_map_empty_title),
+                        body = stringResource(R.string.today_map_empty_body),
+                        modifier = Modifier.align(Alignment.Center),
+                    )
+                }
+            }
+
+            if (!expanded) {
+                Box(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                    contentAlignment = Alignment.TopCenter,
+                ) {
+                    Column(
+                        modifier =
+                            Modifier
+                                .widthIn(max = TrailSpacing.contentMaxWidth)
+                                .fillMaxWidth()
+                                .verticalScroll(scrollState)
+                                .padding(
+                                    PaddingValues(
+                                        start = TrailSpacing.gutter,
+                                        end = TrailSpacing.gutter,
+                                        top = TrailSpacing.md,
+                                        bottom = TrailSpacing.lg,
+                                    ),
+                                ),
+                        verticalArrangement = Arrangement.spacedBy(TrailSpacing.md),
+                    ) {
+                        MetricRow(
+                            metrics =
+                                listOf(
+                                    Metric(
+                                        value = state.distanceKm,
+                                        label = stringResource(R.string.today_stat_distance),
+                                        unit = stringResource(R.string.unit_km),
+                                    ),
+                                    Metric(
+                                        value = state.duration,
+                                        label = stringResource(R.string.today_stat_duration),
+                                    ),
+                                    Metric(
+                                        value = state.stopCount.toString(),
+                                        label = stringResource(R.string.today_stat_stops),
+                                    ),
+                                ),
+                        )
+
+                        // 档位放在行程上方：用户抱怨「今天点怎么这么少」时，
+                        // 紧挨着就能看到当前间隔，直接改，不用跳去设置。
+                        SamplingCard(
+                            tier = state.samplingTier,
+                            expanded = tierExpanded,
+                            onToggle = { tierExpanded = !tierExpanded },
+                            onSelect = onSamplingTier,
+                        )
+
+                        TodayTimelineCard(state = state, onOpenDay = onOpenDay)
+                    }
+                }
+
+                RecordingControlBar(
+                    state = state.recordingState,
+                    onStart = onStart,
+                    onPause = onPause,
+                    onStop = onStop,
                 )
             }
         }
+    }
+}
 
-        StatsSheet(
-            state = state,
-            onStart = onStart,
-            onPause = onPause,
-            onStop = onStop,
+@Composable
+private fun TodayHeader(state: TodayUiState) {
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = TrailSpacing.gutter, vertical = TrailSpacing.md),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.app_name),
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            if (state.dateLabel.isNotBlank()) {
+                Text(
+                    text = state.dateLabel,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 1.dp),
+                )
+            }
+        }
+        RecordingStatusChip(
+            state = state.recordingState,
+            duration =
+                if (state.recordingState == RecordingState.IDLE) {
+                    null
+                } else {
+                    state.duration
+                },
         )
     }
 }
 
 /**
- * 记录状态胶囊。
+ * 提示条。
  *
- * 呼吸点用静态圆点代替动画：省电优先的应用不该为了装饰效果持续跑动画，
- * 也会干扰读屏。状态靠文字区分，不只靠颜色。
+ * 三种状态互斥，按严重程度只显示一条：定位异常 > 休眠 > 暂无新定位。
+ * 同时出现时只把最需要处理的那条摆出来，避免一屏三条警告。
  */
 @Composable
-private fun RecordingPill(
-    state: RecordingState,
-    duration: String,
-    modifier: Modifier = Modifier,
+private fun RecordingNotices(
+    state: TodayUiState,
+    onRetry: () -> Unit,
 ) {
-    val (dotColor, label) =
-        when (state) {
-            RecordingState.RECORDING ->
-                MaterialTheme.colorScheme.secondary to stringResource(R.string.today_recording)
-            RecordingState.PAUSED ->
-                MaterialTheme.colorScheme.tertiary to stringResource(R.string.today_paused)
-            RecordingState.IDLE ->
-                MaterialTheme.colorScheme.outline to stringResource(R.string.today_idle)
+    val recording = state.recordingState == RecordingState.RECORDING
+    val issue = state.locationIssue
+
+    val content: @Composable () -> Unit = {
+        when {
+            issue != null ->
+                CalloutBanner(
+                    text =
+                        stringResource(
+                            when (issue) {
+                                LocationFailureReason.PERMISSION_DENIED ->
+                                    R.string.location_issue_permission
+                                LocationFailureReason.LOCATION_DISABLED ->
+                                    R.string.location_issue_disabled
+                            },
+                        ),
+                    tone = CalloutTone.ERROR,
+                    icon = Icons.Outlined.LocationOff,
+                    actionLabel = stringResource(R.string.action_retry),
+                    onAction = onRetry,
+                )
+
+            state.sleeping && recording ->
+                CalloutBanner(
+                    text = stringResource(R.string.today_sleeping_hint),
+                    tone = CalloutTone.INFO,
+                    icon = Icons.Outlined.Bedtime,
+                )
+
+            state.fixStale && recording ->
+                CalloutBanner(
+                    text = stringResource(R.string.today_fix_stale),
+                    tone = CalloutTone.WARNING,
+                    icon = Icons.Outlined.LocationOff,
+                )
+        }
+    }
+
+    Box(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = TrailSpacing.gutter),
+    ) {
+        content()
+    }
+}
+
+/** 今日行程卡。只展示最近三条，完整时间轴在单日详情里。 */
+@Composable
+private fun TodayTimelineCard(
+    state: TodayUiState,
+    onOpenDay: () -> Unit,
+) {
+    val stayWord = stringResource(R.string.timeline_stay)
+    val stayMinutes = stringResource(R.string.timeline_stay_minutes)
+    val startWord = stringResource(R.string.timeline_start)
+
+    val rows =
+        buildList {
+            state.startedAtLabel?.let { time ->
+                add(TodayRow(time, startWord, "", TimelineTone.START))
+            }
+            state.stays.forEach { stay ->
+                add(
+                    TodayRow(
+                        time = stay.startTimeLabel,
+                        title = stay.label ?: stayWord,
+                        detail = String.format(stayMinutes, stay.minutes),
+                        tone = TimelineTone.STAY,
+                    ),
+                )
+            }
+        }.takeLast(TIMELINE_PREVIEW_COUNT)
+
+    SectionCard(
+        title = stringResource(R.string.today_timeline_title),
+        actionLabel = stringResource(R.string.action_all),
+        onAction = onOpenDay,
+    ) {
+        if (rows.isEmpty()) {
+            Text(
+                text = stringResource(R.string.timeline_empty),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            rows.forEachIndexed { index, row ->
+                TimelineRow(
+                    time = row.time,
+                    title = row.title,
+                    detail = row.detail,
+                    tone = row.tone,
+                    showConnector = index != rows.lastIndex,
+                )
+            }
+        }
+        if (state.pointCount > 0) {
+            Text(
+                text = stringResource(R.string.today_samples, state.pointCount),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = TrailSpacing.sm),
+            )
+        }
+    }
+}
+
+private data class TodayRow(
+    val time: String,
+    val title: String,
+    val detail: String,
+    val tone: TimelineTone,
+)
+
+/**
+ * 采样档位卡。
+ *
+ * 默认收起成一行，点开才露出三档：档位不是高频操作，
+ * 但「今天怎么这么少点」时用户要能当场调，而不是跳去设置里翻。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SamplingCard(
+    tier: SamplingTier,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    onSelect: (SamplingTier) -> Unit,
+) {
+    SectionCard {
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onToggle)
+                    .heightIn(min = 48.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.today_sampling_title),
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                Text(
+                    text = stringResource(tier.shortLabelRes()),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 1.dp),
+                )
+            }
+            Icon(
+                imageVector =
+                    if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
 
+        if (expanded) {
+            Column {
+                SingleChoiceSegmentedButtonRow(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(top = TrailSpacing.md),
+                ) {
+                    val options = SamplingTier.entries
+                    options.forEachIndexed { index, option ->
+                        SegmentedButton(
+                            selected = option == tier,
+                            onClick = { onSelect(option) },
+                            shape = SegmentedButtonDefaults.itemShape(index, options.size),
+                            colors = trailSegmentedColors(),
+                        ) {
+                            Text(text = stringResource(option.nameRes()))
+                        }
+                    }
+                }
+                Text(
+                    text = stringResource(R.string.today_sampling_hint),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = TrailSpacing.sm),
+                )
+            }
+        }
+    }
+}
+
+/** 底部记录控制条。常驻，不随内容滚动。 */
+@Composable
+private fun RecordingControlBar(
+    state: RecordingState,
+    onStart: () -> Unit,
+    onPause: () -> Unit,
+    onStop: () -> Unit,
+) {
     Surface(
-        color = MaterialTheme.colorScheme.inverseSurface,
-        contentColor = MaterialTheme.colorScheme.inverseOnSurface,
-        shape = MaterialTheme.shapes.extraLarge,
-        modifier = modifier,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        shadowElevation = 8.dp,
+        modifier = Modifier.fillMaxWidth(),
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+        Box(
+            modifier = Modifier.fillMaxWidth(),
+            contentAlignment = Alignment.Center,
         ) {
-            Box(
+            Row(
                 modifier =
                     Modifier
-                        .size(8.dp)
-                        .semantics { contentDescription = label },
+                        .widthIn(max = TrailSpacing.contentMaxWidth)
+                        .fillMaxWidth()
+                        .padding(
+                            horizontal = TrailSpacing.gutter,
+                            vertical = TrailSpacing.md,
+                        ),
+                horizontalArrangement = Arrangement.spacedBy(TrailSpacing.md),
             ) {
-                Surface(
-                    color = dotColor,
-                    shape = CircleShape,
-                    modifier = Modifier.fillMaxSize(),
-                ) {}
-            }
-            Text(text = label, style = MaterialTheme.typography.labelLarge)
-            if (state != RecordingState.IDLE) {
-                Text(text = "·", style = MaterialTheme.typography.labelLarge)
-                Text(text = duration, style = MaterialTheme.typography.labelLarge)
-            }
-        }
-    }
-}
+                when (state) {
+                    RecordingState.IDLE ->
+                        Button(
+                            onClick = onStart,
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = CONTROL_HEIGHT),
+                            contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.PlayArrow,
+                                contentDescription = null,
+                                modifier = Modifier.size(ButtonDefaults.IconSize),
+                            )
+                            Spacer(modifier = Modifier.size(ButtonDefaults.IconSpacing))
+                            Text(text = stringResource(R.string.today_action_start))
+                        }
 
-/**
- * 「暂时没有新定位」提示。
- *
- * 与定位异常条的区别：这不是故障，采集还在按间隔等，所以：
- * - 用琥珀色（数据缺失语义）而不是错误红
- * - 不给「重试」按钮——重试没有意义，它自己会恢复
- * - 必须带文字，不能只靠颜色
- *
- * 阈值是 15 分钟（见 `RecordingService.STALE_AFTER_MS`）：静止档本身就是
- * 10 分钟一个点，太早提示会在健康状态下闪来闪去。
- */
-@Composable
-private fun StaleFixHint(modifier: Modifier = Modifier) {
-    Surface(
-        color = MaterialTheme.colorScheme.tertiaryContainer,
-        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-        shape = MaterialTheme.shapes.extraLarge,
-        modifier = modifier,
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-        ) {
-            Icon(
-                imageVector = Icons.Outlined.LocationOff,
-                contentDescription = null,
-                modifier = Modifier.size(14.dp),
-            )
-            Text(
-                text = stringResource(R.string.today_fix_stale),
-                style = MaterialTheme.typography.labelMedium,
-            )
-        }
-    }
-}
+                    RecordingState.RECORDING -> {
+                        FilledTonalButton(
+                            onClick = onPause,
+                            modifier =
+                                Modifier
+                                    .weight(1f)
+                                    .heightIn(min = CONTROL_HEIGHT),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Pause,
+                                contentDescription = null,
+                                modifier = Modifier.size(ButtonDefaults.IconSize),
+                            )
+                            Spacer(modifier = Modifier.size(ButtonDefaults.IconSpacing))
+                            Text(text = stringResource(R.string.today_action_pause))
+                        }
+                        Button(
+                            onClick = onStop,
+                            modifier =
+                                Modifier
+                                    .weight(1f)
+                                    .heightIn(min = CONTROL_HEIGHT),
+                            colors =
+                                ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.error,
+                                    contentColor = MaterialTheme.colorScheme.onError,
+                                ),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Stop,
+                                contentDescription = null,
+                                modifier = Modifier.size(ButtonDefaults.IconSize),
+                            )
+                            Spacer(modifier = Modifier.size(ButtonDefaults.IconSpacing))
+                            Text(text = stringResource(R.string.today_action_stop))
+                        }
+                    }
 
-/**
- * 休眠提示。
- *
- * 与「暂时没有新定位」是两件事：那是在等信号，这是主动降频。
- * 用中性色而不是琥珀色——休眠是正常且省电的行为，不是异常。
- */
-@Composable
-private fun SleepingHint(modifier: Modifier = Modifier) {
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-        shape = MaterialTheme.shapes.extraLarge,
-        modifier = modifier,
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-        ) {
-            Icon(
-                imageVector = Icons.Outlined.Bedtime,
-                contentDescription = null,
-                modifier = Modifier.size(14.dp),
-            )
-            Text(
-                text = stringResource(R.string.today_sleeping_hint),
-                style = MaterialTheme.typography.labelMedium,
-            )
-        }
-    }
-}
-
-/**
- * 定位异常提示条。
- *
- * 三种原因的修复方式不同，所以文案分开给：
- * 权限问题要去设置页、开关问题要去快捷面板、信号问题只需换个地方重试。
- */
-@Composable
-private fun LocationIssueBanner(
-    reason: LocationFailureReason,
-    onRetry: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val message =
-        when (reason) {
-            LocationFailureReason.PERMISSION_DENIED ->
-                stringResource(R.string.location_issue_permission)
-            LocationFailureReason.LOCATION_DISABLED ->
-                stringResource(R.string.location_issue_disabled)
-        }
-
-    Surface(
-        color = MaterialTheme.colorScheme.errorContainer,
-        contentColor = MaterialTheme.colorScheme.onErrorContainer,
-        shape = MaterialTheme.shapes.medium,
-        shadowElevation = 4.dp,
-        modifier = modifier.fillMaxWidth(),
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Icon(
-                imageVector = Icons.Outlined.LocationOff,
-                contentDescription = null,
-                modifier = Modifier.size(20.dp),
-            )
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.weight(1f),
-            )
-            FilledTonalButton(onClick = onRetry) {
-                Text(text = stringResource(R.string.action_retry))
+                    RecordingState.PAUSED -> {
+                        Button(
+                            onClick = onStart,
+                            modifier =
+                                Modifier
+                                    .weight(1f)
+                                    .heightIn(min = CONTROL_HEIGHT),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.PlayArrow,
+                                contentDescription = null,
+                                modifier = Modifier.size(ButtonDefaults.IconSize),
+                            )
+                            Spacer(modifier = Modifier.size(ButtonDefaults.IconSpacing))
+                            Text(text = stringResource(R.string.today_action_start))
+                        }
+                        FilledTonalButton(
+                            onClick = onStop,
+                            modifier =
+                                Modifier
+                                    .weight(1f)
+                                    .heightIn(min = CONTROL_HEIGHT),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Stop,
+                                contentDescription = null,
+                                modifier = Modifier.size(ButtonDefaults.IconSize),
+                            )
+                            Spacer(modifier = Modifier.size(ButtonDefaults.IconSpacing))
+                            Text(text = stringResource(R.string.today_action_stop))
+                        }
+                    }
+                }
             }
         }
     }
 }
 
-/** 空状态提示卡片。悬浮在地图中央，不遮挡底部控制区。 */
+/** 地图中央的空状态提示。 */
 @Composable
-private fun EmptyHintCard(
+private fun EmptyMapHint(
     title: String,
     body: String,
     modifier: Modifier = Modifier,
 ) {
     Surface(
-        color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.94f),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
         shape = MaterialTheme.shapes.medium,
-        shadowElevation = 4.dp,
-        modifier = modifier.padding(horizontal = 32.dp),
+        shadowElevation = 2.dp,
+        modifier = modifier.padding(horizontal = TrailSpacing.xl),
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
+            modifier = Modifier.padding(horizontal = TrailSpacing.lg, vertical = TrailSpacing.md),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(TrailSpacing.xs),
         ) {
             Text(
                 text = title,
@@ -416,225 +747,48 @@ private fun EmptyHintCard(
     }
 }
 
-/**
- * 底部统计面板，含开始 / 暂停 / 结束控制。
- *
- * 形状：只圆上沿。面板下面直接是底部导航栏，底部再画圆角会露出两个缺口，
- * 看起来像面板被裁掉了一块。圆角半径仍然取自 `MaterialTheme.shapes`，
- * 不在页面里写死数值。
- */
-@Composable
-private fun StatsSheet(
-    state: TodayUiState,
-    onStart: () -> Unit,
-    onPause: () -> Unit,
-    onStop: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        shape =
-            MaterialTheme.shapes.large.copy(
-                bottomStart = CornerSize(0.dp),
-                bottomEnd = CornerSize(0.dp),
-            ),
-        tonalElevation = 0.dp,
-        shadowElevation = 8.dp,
-        modifier = modifier.fillMaxWidth(),
-    ) {
-        // 面板本身铺满整行（下沿才能和导航栏对齐），内容限宽居中。
-        // 宽屏上如果整块面板收窄，底部两个直角会悬在屏幕中间，比圆角更奇怪。
-        Box(
-            modifier = Modifier.fillMaxWidth(),
-            contentAlignment = Alignment.Center,
-        ) {
-            Column(
-                modifier =
-                    Modifier
-                        .widthIn(max = CONTENT_MAX_WIDTH)
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 16.dp),
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    StatBlock(
-                        value = state.distanceKm,
-                        unit = stringResource(R.string.today_unit_km),
-                        label = stringResource(R.string.today_stat_distance),
-                        modifier = Modifier.weight(1.25f),
-                        highlight = true,
-                    )
-                    VerticalDivider(
-                        modifier = Modifier.height(40.dp),
-                        color = MaterialTheme.colorScheme.outlineVariant,
-                    )
-                    StatBlock(
-                        value = state.duration,
-                        unit = "",
-                        label = stringResource(R.string.today_stat_duration),
-                        modifier =
-                            Modifier
-                                .weight(1f)
-                                .padding(start = 16.dp),
-                    )
-                    VerticalDivider(
-                        modifier = Modifier.height(40.dp),
-                        color = MaterialTheme.colorScheme.outlineVariant,
-                    )
-                    StatBlock(
-                        value = state.stopCount.toString(),
-                        unit = "",
-                        label = stringResource(R.string.today_stat_stops),
-                        modifier =
-                            Modifier
-                                .weight(1f)
-                                .padding(start = 16.dp),
-                    )
-                }
-
-                HorizontalDivider(
-                    modifier = Modifier.padding(vertical = 14.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant,
-                )
-
-                RecordingControls(
-                    state = state.recordingState,
-                    onStart = onStart,
-                    onPause = onPause,
-                    onStop = onStop,
-                )
-            }
-        }
+/** 采样档位的短标签。收起状态显示的就是这一句。 */
+private fun SamplingTier.shortLabelRes(): Int =
+    when (this) {
+        SamplingTier.POWER_SAVER -> R.string.tier_power_short
+        SamplingTier.BALANCED -> R.string.tier_balanced_short
+        SamplingTier.HIGH_ACCURACY -> R.string.tier_high_short
     }
-}
 
-/** 面板内容的最大宽度。宽屏上内容居中，面板本身仍然铺满整行。 */
-private val CONTENT_MAX_WIDTH = 640.dp
-
-/** 记录控制按钮的最小高度。52dp 高于 Material 默认的 40dp，户外单手更好按。 */
-private val CONTROLS_MIN_HEIGHT = 52.dp
-
-@Composable
-private fun RecordingControls(
-    state: RecordingState,
-    onStart: () -> Unit,
-    onPause: () -> Unit,
-    onStop: () -> Unit,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        when (state) {
-            RecordingState.IDLE ->
-                Button(
-                    onClick = onStart,
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = CONTROLS_MIN_HEIGHT),
-                    contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.PlayArrow,
-                        contentDescription = null,
-                        modifier = Modifier.size(ButtonDefaults.IconSize),
-                    )
-                    Spacer(modifier = Modifier.width(ButtonDefaults.IconSpacing))
-                    Text(text = stringResource(R.string.today_action_start))
-                }
-
-            RecordingState.RECORDING -> {
-                FilledTonalButton(
-                    onClick = onPause,
-                    modifier =
-                        Modifier
-                            .weight(1f)
-                            .heightIn(min = CONTROLS_MIN_HEIGHT),
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Pause,
-                        contentDescription = null,
-                        modifier = Modifier.size(ButtonDefaults.IconSize),
-                    )
-                    Spacer(modifier = Modifier.width(ButtonDefaults.IconSpacing))
-                    Text(text = stringResource(R.string.today_action_pause))
-                }
-                Button(
-                    onClick = onStop,
-                    modifier =
-                        Modifier
-                            .weight(1f)
-                            .heightIn(min = CONTROLS_MIN_HEIGHT),
-                    colors =
-                        ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.error,
-                            contentColor = MaterialTheme.colorScheme.onError,
-                        ),
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Stop,
-                        contentDescription = null,
-                        modifier = Modifier.size(ButtonDefaults.IconSize),
-                    )
-                    Spacer(modifier = Modifier.width(ButtonDefaults.IconSpacing))
-                    Text(text = stringResource(R.string.today_action_stop))
-                }
-            }
-
-            RecordingState.PAUSED -> {
-                Button(
-                    onClick = onStart,
-                    modifier =
-                        Modifier
-                            .weight(1f)
-                            .heightIn(min = CONTROLS_MIN_HEIGHT),
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.PlayArrow,
-                        contentDescription = null,
-                        modifier = Modifier.size(ButtonDefaults.IconSize),
-                    )
-                    Spacer(modifier = Modifier.width(ButtonDefaults.IconSpacing))
-                    Text(text = stringResource(R.string.today_action_start))
-                }
-                FilledTonalButton(
-                    onClick = onStop,
-                    modifier =
-                        Modifier
-                            .weight(1f)
-                            .heightIn(min = CONTROLS_MIN_HEIGHT),
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Stop,
-                        contentDescription = null,
-                        modifier = Modifier.size(ButtonDefaults.IconSize),
-                    )
-                    Spacer(modifier = Modifier.width(ButtonDefaults.IconSpacing))
-                    Text(text = stringResource(R.string.today_action_stop))
-                }
-            }
-        }
+/** 分段按钮上的名字，两个汉字，三档能在一行里放下。 */
+private fun SamplingTier.nameRes(): Int =
+    when (this) {
+        SamplingTier.POWER_SAVER -> R.string.tier_power
+        SamplingTier.BALANCED -> R.string.tier_balanced
+        SamplingTier.HIGH_ACCURACY -> R.string.tier_high
     }
-}
+
+/** 地图占可视高度的比例，以及上下限。 */
+private const val MAP_HEIGHT_FRACTION = 0.42f
+private val MAP_MIN_HEIGHT = 200.dp
+private val MAP_MAX_HEIGHT = 360.dp
+
+/** 控制按钮高度。52dp 高于 Material 默认的 40dp，户外单手更好按。 */
+private val CONTROL_HEIGHT = 52.dp
+
+/** 今日行程卡最多显示几条。 */
+private const val TIMELINE_PREVIEW_COUNT = 3
+
+/** 进入全屏时换一个 fitKey，让轨迹重新缩放一次。 */
+private const val FULLSCREEN_FIT_KEY = "today-fullscreen"
 
 @Preview(showBackground = true, name = "今日 - 未开始")
 @Composable
 private fun TodayIdlePreview() {
     DayTrailTheme {
         TodayContent(
-            state =
-                TodayUiState(
-                    dayKey =
-                        com.hmilyld.daytrail.core
-                            .DayKey("2026-11-15"),
-                ),
+            state = TodayUiState(dayKey = DayKey("2026-11-19"), dateLabel = "11月19日 星期四"),
             onStart = {},
             onPause = {},
             onStop = {},
             onRetry = {},
+            onOpenDay = {},
+            onSamplingTier = {},
         )
     }
 }
@@ -646,19 +800,26 @@ private fun TodayRecordingPreview() {
         TodayContent(
             state =
                 TodayUiState(
-                    dayKey =
-                        com.hmilyld.daytrail.core
-                            .DayKey("2026-11-15"),
+                    dayKey = DayKey("2026-11-19"),
+                    dateLabel = "11月19日 星期四",
                     recordingState = RecordingState.RECORDING,
                     distanceKm = "12.4",
-                    duration = "2h14m",
+                    duration = "2:14",
                     stopCount = 8,
                     pointCount = 412,
+                    startedAtLabel = "08:12",
+                    stays =
+                        listOf(
+                            TodayStay("09:41", "公司", 18),
+                            TodayStay("12:30", null, 32),
+                        ),
                 ),
             onStart = {},
             onPause = {},
             onStop = {},
             onRetry = {},
+            onOpenDay = {},
+            onSamplingTier = {},
         )
     }
 }

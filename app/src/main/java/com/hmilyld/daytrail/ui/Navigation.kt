@@ -3,7 +3,8 @@ package com.hmilyld.daytrail.ui
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Map
-import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.Place
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -19,13 +20,19 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.hmilyld.daytrail.ui.nav.TopLevelDestination
 
-/** 顶层导航项的图标。图标只是辅助，语义由文字标签承担。 */
+/**
+ * 顶层导航项的图标。图标只是辅助，语义由文字标签承担。
+ *
+ * 「我的」用人物图标而不是齿轮：这一页除了设置还有数据概览，
+ * 齿轮会让人以为只能改开关。
+ */
 internal val TopLevelDestination.icon: ImageVector
     get() =
         when (this) {
             TopLevelDestination.TODAY -> Icons.Outlined.Map
             TopLevelDestination.HISTORY -> Icons.Outlined.History
-            TopLevelDestination.SETTINGS -> Icons.Outlined.Settings
+            TopLevelDestination.PLACES -> Icons.Outlined.Place
+            TopLevelDestination.ME -> Icons.Outlined.Person
         }
 
 /**

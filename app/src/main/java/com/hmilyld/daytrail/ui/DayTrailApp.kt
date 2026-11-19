@@ -82,14 +82,19 @@ private fun MainShell(
 ) {
     val backStack: NavBackStack<NavKey> = rememberNavBackStack(Destination.Today)
 
+    // 地图全屏时把外壳一起收起来，否则「全屏」只是把地图拉高一点，
+    // 底部还压着一条导航栏。
+    val immersive by container.chrome.immersive.collectAsStateWithLifecycle()
+
     val currentDestination = backStack.lastOrNull()
     val currentTopLevel =
         TopLevelDestination.entries.firstOrNull { it.destination == currentDestination }
             ?: TopLevelDestination.TODAY
     val showNavigationArea =
-        TopLevelDestination.entries.any {
-            it.destination == currentDestination
-        }
+        !immersive &&
+            TopLevelDestination.entries.any {
+                it.destination == currentDestination
+            }
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val wideLayout = maxWidth >= 600.dp
@@ -202,9 +207,6 @@ private fun NavHost(
                         onOpenPermissions = {
                             backStack.add(Destination.Permissions)
                         },
-                        onOpenPlaces = {
-                            backStack.add(Destination.Places)
-                        },
                         onOpenDiagnostics = {
                             backStack.add(Destination.Diagnostics)
                         },
@@ -219,7 +221,6 @@ private fun NavHost(
                 entry<Destination.Places> {
                     PlacesScreen(
                         container = container,
-                        onBack = { backStack.removeLastOrNull() },
                         onOpenPlace = { id -> backStack.add(Destination.PlaceDetail(id)) },
                         onAddPlace = { backStack.add(Destination.PlacePicker) },
                     )
