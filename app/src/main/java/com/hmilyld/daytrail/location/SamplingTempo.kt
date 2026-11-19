@@ -121,9 +121,16 @@ class SamplingTempo(
     ) {
         if (previous == null) return
 
-        val elapsedSec = (sample.timestampMs - previous.timestampMs) / 1000.0
-        if (elapsedSec <= 0.0) return
+        val elapsedMs = sample.timestampMs - previous.timestampMs
+        if (elapsedMs <= 0L) return
 
+        // 同一轮采样的重复投递：实测出现过 4 秒内来两个点、相距 45 米。
+        // 用这种间隔算速度会得到 12 m/s，把静止档直接打成驾车档，
+        // 还会清掉「已静止多久」，让整夜都进不了休眠。
+        // 最短档位是 30 秒，15 秒以下的间隔不可能是新的一轮采样。
+        if (elapsedMs < MIN_SPEED_WINDOW_MS) return
+
+        val elapsedSec = elapsedMs / 1000.0
         val speed = distanceMeters(previous.point, sample.point) / elapsedSec
         val still = speed < MOVING_SPEED_MPS
 
@@ -170,9 +177,9 @@ class SamplingTempo(
     }
 
     /**
-     * 显著运动触发：立刻退出休眠。
+     * 显著运动触发：立刻退出慢速档（休眠或静止）。
      *
-     * 不知道速度，先按移动档跑；下一次采样会自己收敛。
+     * 不知道速度，先按移动档跑；下一次采样会自己收敛，没动的话 5 分钟后降回静止。
      */
     fun wake() {
         tier = TempoTier.MOVING
@@ -199,6 +206,14 @@ class SamplingTempo(
 
         /** 连续静止多久进休眠。 */
         const val SLEEP_AFTER_MS = 60 * 60_000L
+
+        /**
+         * 计算速度所需的最短间隔。
+         *
+         * 低于它的两次投递视为同一轮采样的重复（实测 4 秒内来两个点、相距 45 米）。
+         * 取 15 秒：最短档位（高精度驾车）是 30 秒，不会被误伤。
+         */
+        const val MIN_SPEED_WINDOW_MS = 15_000L
 
         /** 在已知地点内，连续静止多久就进休眠。到了目的地就不必再密集采。 */
         const val PLACE_SLEEP_AFTER_MS = 15 * 60_000L

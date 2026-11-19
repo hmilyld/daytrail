@@ -202,4 +202,28 @@ class SamplingTempoTest {
 
         assertEquals(TempoTier.STILL, tempo.tier)
     }
+
+    @Test
+    fun `a duplicate delivery does not reset the still timer`() {
+        // 静止 50 分钟
+        stayStill(fromMinute = 0, toMinute = 50)
+        assertEquals(TempoTier.STILL, tempo.tier)
+
+        // 同一轮采样的重复投递：4 秒、45 米（实测数据里出现过）。
+        // 用它算速度会得到 11 m/s，把静止档打成驾车档并清空静止计时。
+        tempo.observe(sample(0.0, 3_000), sample(45.0, 3_004))
+        assertEquals(TempoTier.STILL, tempo.tier)
+
+        // 再静止 10 分钟，累计满 60 分钟应该进休眠
+        tempo.observe(sample(45.0, 3_004), sample(45.0, 3_600))
+        assertEquals(TempoTier.SLEEP, tempo.tier)
+    }
+
+    @Test
+    fun `a normal interval still updates the tier`() {
+        // 30 秒是最高精度档的驾车间隔，不能被最短窗口挡掉
+        tempo.observe(sample(0.0, 0), sample(300.0, 30))
+
+        assertEquals(TempoTier.DRIVING, tempo.tier)
+    }
 }

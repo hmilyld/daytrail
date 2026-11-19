@@ -238,9 +238,12 @@ class RecordingService : Service() {
     /**
      * 显著运动唤醒。
      *
-     * 休眠时采样间隔是 1 小时，**不能只等下一个点**：早上出门的话，
-     * 最坏要一个小时后才知道人已经走了。传感器一响就立刻恢复节奏，
-     * 并主动补一个点，把出门的头几百米补上。
+     * 休眠（1 小时）和静止档（10 分钟）都会把间隔拉长，**两种都要处理**：
+     * 早上出门时人还在静止档，如果只在休眠时响应传感器，下一次回调最坏要等
+     * 10 分钟——实测 07:32 出发、07:43 才拿到下一个点，中间 6.4 公里整段丢失。
+     *
+     * 传感器一响就恢复节奏并主动补一个点；如果其实没动，降档的 5 分钟延迟
+     * 会把它自然降回静止档。
      */
     private fun startMotionWake() {
         motionJob?.cancel()
@@ -251,10 +254,16 @@ class RecordingService : Service() {
         motionJob =
             scope.launch {
                 motionGate.events().collect {
-                    if (tempo.tier != TempoTier.SLEEP) return@collect
-                    Log.d(TAG, "显著运动，退出休眠")
+                    val tier = tempo.tier
+                    if (tier != TempoTier.SLEEP && tier != TempoTier.STILL) return@collect
+
+                    Log.d(
+                        TAG,
+                        if (tier == TempoTier.SLEEP) "显著运动，退出休眠" else "显著运动，退出静止档",
+                    )
+                    val wasSleeping = tier == TempoTier.SLEEP
                     tempo.wake()
-                    appContainer.recordingState.setSleeping(false)
+                    if (wasSleeping) appContainer.recordingState.setSleeping(false)
                     sampleInterval.value = tempo.intervalMs
                     systemSource
                         .requestOnce(highAccuracy = true, timeoutMs = WAKE_FIX_TIMEOUT_MS)
