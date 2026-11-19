@@ -68,5 +68,13 @@ enum class TopLevelDestination(
 ) {
     TODAY(Destination.Today, com.hmilyld.daytrail.R.string.nav_today),
     HISTORY(Destination.History, com.hmilyld.daytrail.R.string.nav_history),
-    SETTINGS(Destination.Settings, com.hmilyld.daytrail.R.string.nav_settings),
+
+    /**
+     * 地点。
+     *
+     * 从设置里提出来做一级入口：时间轴的「家 / 公司」由它决定，
+     * 埋在设置第四层时，用户根本不会去命名地点，时间轴就永远只有「停留」。
+     */
+    PLACES(Destination.Places, com.hmilyld.daytrail.R.string.places_title),
+    ME(Destination.Settings, com.hmilyld.daytrail.R.string.nav_me),
 }

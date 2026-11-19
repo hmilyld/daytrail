@@ -29,7 +29,6 @@ import androidx.compose.material.icons.outlined.IosShare
 import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.outlined.MyLocation
 import androidx.compose.material.icons.outlined.Notifications
-import androidx.compose.material.icons.outlined.Place
 import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material.icons.outlined.ReceiptLong
 import androidx.compose.material.icons.outlined.SettingsBrightness
@@ -82,6 +81,7 @@ import com.hmilyld.daytrail.data.prefs.SamplingTier
 import com.hmilyld.daytrail.data.prefs.ThemeMode
 import com.hmilyld.daytrail.permission.Permissions
 import com.hmilyld.daytrail.ui.appViewModelFactory
+import com.hmilyld.daytrail.ui.components.trailSegmentedColors
 import com.hmilyld.daytrail.ui.screens.permission.PermissionHealthSummary
 import com.hmilyld.daytrail.ui.theme.DayTrailTheme
 import kotlinx.coroutines.launch
@@ -105,7 +105,6 @@ import java.time.ZoneOffset
 fun SettingsScreen(
     container: AppContainer,
     onOpenPermissions: () -> Unit,
-    onOpenPlaces: () -> Unit,
     onOpenDiagnostics: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -168,7 +167,6 @@ fun SettingsScreen(
         onThemeChange = viewModel::setThemeMode,
         onClearAll = viewModel::clearAllData,
         onOpenPermissions = onOpenPermissions,
-        onOpenPlaces = onOpenPlaces,
         onOpenDiagnostics = onOpenDiagnostics,
         onOpenLocationSettings = { Permissions.openAppSettings(context) },
         onOpenNotificationSettings = { Permissions.openNotificationSettings(context) },
@@ -249,6 +247,7 @@ private fun ExportDialog(
                             selected = format == value,
                             onClick = { format = value },
                             shape = SegmentedButtonDefaults.itemShape(index, formats.size),
+                            colors = trailSegmentedColors(),
                         ) {
                             Text(
                                 text = stringResource(formatTitle(value)),
@@ -272,6 +271,7 @@ private fun ExportDialog(
                             selected = option == value,
                             onClick = { option = value },
                             shape = SegmentedButtonDefaults.itemShape(index, options.size),
+                            colors = trailSegmentedColors(),
                         ) {
                             Text(text = stringResource(rangeTitle(value)), maxLines = 1)
                         }
@@ -415,7 +415,6 @@ private fun SettingsContent(
     onThemeChange: (ThemeMode) -> Unit,
     onClearAll: () -> Unit,
     onOpenPermissions: () -> Unit,
-    onOpenPlaces: () -> Unit,
     onOpenDiagnostics: () -> Unit,
     onOpenLocationSettings: () -> Unit,
     onOpenNotificationSettings: () -> Unit,
@@ -431,7 +430,7 @@ private fun SettingsContent(
             TopAppBar(
                 title = {
                     Text(
-                        text = stringResource(R.string.settings_title),
+                        text = stringResource(R.string.nav_me),
                         style = MaterialTheme.typography.titleLarge,
                     )
                 },
@@ -452,6 +451,15 @@ private fun SettingsContent(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Column(modifier = Modifier.widthIn(max = 840.dp)) {
+                    // ---- 概览 ----
+                    // 权限是否就绪放在最上面：轨迹记不上时，九成原因是这里的某一项掉了。
+                    SettingsSection(title = stringResource(R.string.mine_overview)) {
+                        PermissionHealthSummary(
+                            onOpen = onOpenPermissions,
+                            modifier = Modifier.padding(8.dp),
+                        )
+                    }
+
                     // ---- 外观 ----
                     SettingsSection(title = stringResource(R.string.settings_section_appearance)) {
                         ThemeSelector(
@@ -480,20 +488,10 @@ private fun SettingsContent(
                             checked = state.autoSleep,
                             onCheckedChange = onAutoSleepChange,
                         )
-                        SettingsNavRow(
-                            icon = Icons.Outlined.Place,
-                            title = stringResource(R.string.settings_places),
-                            subtitle = stringResource(R.string.settings_places_desc),
-                            onClick = onOpenPlaces,
-                        )
                     }
 
                     // ---- 权限 ----
                     SettingsSection(title = stringResource(R.string.settings_section_permission)) {
-                        PermissionHealthSummary(
-                            onOpen = onOpenPermissions,
-                            modifier = Modifier.padding(8.dp),
-                        )
                         SettingsNavRow(
                             icon = Icons.Outlined.MyLocation,
                             title = stringResource(R.string.settings_permission_location),
@@ -664,6 +662,7 @@ private fun ThemeSelector(
                     selected = mode == selected,
                     onClick = { onSelect(mode) },
                     shape = SegmentedButtonDefaults.itemShape(index, options.size),
+                    colors = trailSegmentedColors(),
                     icon = {
                         SegmentedButtonDefaults.Icon(active = mode == selected) {
                             Icon(
@@ -841,7 +840,6 @@ private fun SettingsLightPreview() {
             onThemeChange = {},
             onClearAll = {},
             onOpenPermissions = {},
-            onOpenPlaces = {},
             onOpenDiagnostics = {},
             onOpenLocationSettings = {},
             onOpenNotificationSettings = {},
@@ -868,7 +866,6 @@ private fun SettingsDarkPreview() {
             onThemeChange = {},
             onClearAll = {},
             onOpenPermissions = {},
-            onOpenPlaces = {},
             onOpenDiagnostics = {},
             onOpenLocationSettings = {},
             onOpenNotificationSettings = {},

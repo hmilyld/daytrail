@@ -3,9 +3,7 @@ package com.hmilyld.daytrail.ui.components
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
@@ -16,12 +14,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.hmilyld.daytrail.R
 
 /**
  * 空状态。图标是装饰性的（contentDescription = null），
@@ -70,75 +66,6 @@ fun EmptyState(
     }
 }
 
-/**
- * 统计数字。今日页底部的三宫格用。
- *
- * 结构是「大数字 + 单位 + 小标签」：数字用 `displaySmall` 或 `headlineSmall`，
- * 单位贴底、标签在下，避免三个数字一样重、用户分不清主次。
- * 强调项（里程）用更大的字号，其余保持同一基线。
- */
-@Composable
-fun StatBlock(
-    value: String,
-    unit: String,
-    label: String,
-    modifier: Modifier = Modifier,
-    highlight: Boolean = false,
-) {
-    Column(
-        modifier =
-            modifier
-                .heightIn(min = 56.dp)
-                .padding(horizontal = 4.dp),
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Row(
-            verticalAlignment = Alignment.Bottom,
-            horizontalArrangement = Arrangement.spacedBy(3.dp),
-        ) {
-            Text(
-                text = value,
-                style =
-                    if (highlight) {
-                        MaterialTheme.typography.displaySmall
-                    } else {
-                        MaterialTheme.typography.headlineSmall
-                    },
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-            )
-            if (unit.isNotEmpty()) {
-                Text(
-                    text = unit,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 6.dp),
-                )
-            }
-        }
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 2.dp),
-        )
-    }
-}
-
-/** 分节标题。设置页用。 */
-@Composable
-fun SectionHeader(
-    text: String,
-    modifier: Modifier = Modifier,
-) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = modifier.padding(start = 4.dp, top = 24.dp, bottom = 8.dp),
-    )
-}
-
 /** 仅用于无障碍：把整块内容读成一句话，替代逐个节点朗读。 */
 @Composable
 fun MergeForAccessibility(
@@ -155,10 +82,6 @@ fun MergeForAccessibility(
         content()
     }
 }
-
-/** 供 Preview 与占位使用的示例文案，避免页面里散落硬编码中文。 */
-@Composable
-internal fun placeholderEmptyBody(): String = stringResource(R.string.today_empty_body)
 
 /**
  * 地图的文字版概要。

@@ -36,6 +36,15 @@ internal object TrailColors {
     /** 深色主题下的错误容器色，理由同 [GreenContainerDark]。 */
     val RedContainerDark = Color(0xFF4A1414)
 
+    /**
+     * 热力方块上的字色。
+     *
+     * 不随主题变化：色块本身就是背景，主题的 onSurface 在深色下是浅字、
+     * 浅色下是深字，直接套上去总有一种主题会看不清。
+     */
+    val OnHeatDark = Color(0xFF0B1220)
+    val OnHeatLight = Color(0xFFFFFFFF)
+
     // 中性色（浅色）
     val SurfaceLight = Color(0xFFF5F7FA)
     val SurfaceContainerLowestLight = Color(0xFFFFFFFF)

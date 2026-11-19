@@ -25,6 +25,9 @@ class AppContainer(
 ) {
     val settingsStore: SettingsStore = SettingsStore(appContext)
 
+    /** 应用外壳（导航栏）显示状态。地图全屏时由地图页写入。 */
+    val chrome: ChromeState = ChromeState()
+
     /** 记录状态只存在内存里，进程重启即归零，与实际服务状态保持一致。 */
     val recordingState: RecordingStateHolder = RecordingStateHolder()
 

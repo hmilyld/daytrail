@@ -82,38 +82,49 @@ private fun MainShell(
 ) {
     val backStack: NavBackStack<NavKey> = rememberNavBackStack(Destination.Today)
 
+    // 地图全屏时把外壳一起收起来，否则「全屏」只是把地图拉高一点，
+    // 底部还压着一条导航栏。
+    val immersive by container.chrome.immersive.collectAsStateWithLifecycle()
+
     val currentDestination = backStack.lastOrNull()
     val currentTopLevel =
         TopLevelDestination.entries.firstOrNull { it.destination == currentDestination }
             ?: TopLevelDestination.TODAY
     val showNavigationArea =
-        TopLevelDestination.entries.any {
-            it.destination == currentDestination
-        }
+        !immersive &&
+            TopLevelDestination.entries.any {
+                it.destination == currentDestination
+            }
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val wideLayout = maxWidth >= 600.dp
 
-        if (wideLayout && showNavigationArea) {
+        // 分支只看宽度，不看导航区是否显示。
+        // 早期写成 `wideLayout && showNavigationArea`，于是 >=600dp 上点全屏时
+        // immersive 一变就换了分支，NavHost 被销毁重建：地图重新创建、
+        // rememberSaveable 的展开状态丢失，全屏根本站不住。
+        if (wideLayout) {
             // 宽屏：左侧 NavigationRail + 内容区。
             // 没有 Scaffold，所以 insets 必须在这里显式消费，
             // 否则内容会顶到状态栏、被手势条遮住。
             Row(modifier = Modifier.fillMaxSize()) {
-                DayTrailRail(
-                    current = currentTopLevel,
-                    onSelect = { target -> backStack.navigateTopLevel(target.destination) },
-                )
+                if (showNavigationArea) {
+                    DayTrailRail(
+                        current = currentTopLevel,
+                        onSelect = { target -> backStack.navigateTopLevel(target.destination) },
+                    )
+                }
+                // 没有导航边栏时，左侧的挖孔要自己避开；有边栏时那一侧由它消费。
+                var insetSides =
+                    WindowInsetsSides.Top + WindowInsetsSides.End + WindowInsetsSides.Bottom
+                if (!showNavigationArea) {
+                    insetSides += WindowInsetsSides.Start
+                }
                 Box(
                     modifier =
                         Modifier
                             .fillMaxSize()
-                            .windowInsetsPadding(
-                                WindowInsets.safeDrawing.only(
-                                    WindowInsetsSides.Top +
-                                        WindowInsetsSides.End +
-                                        WindowInsetsSides.Bottom,
-                                ),
-                            ),
+                            .windowInsetsPadding(WindowInsets.safeDrawing.only(insetSides)),
                 ) {
                     NavHost(backStack = backStack, container = container)
                 }
@@ -202,9 +213,6 @@ private fun NavHost(
                         onOpenPermissions = {
                             backStack.add(Destination.Permissions)
                         },
-                        onOpenPlaces = {
-                            backStack.add(Destination.Places)
-                        },
                         onOpenDiagnostics = {
                             backStack.add(Destination.Diagnostics)
                         },
@@ -219,7 +227,6 @@ private fun NavHost(
                 entry<Destination.Places> {
                     PlacesScreen(
                         container = container,
-                        onBack = { backStack.removeLastOrNull() },
                         onOpenPlace = { id -> backStack.add(Destination.PlaceDetail(id)) },
                         onAddPlace = { backStack.add(Destination.PlacePicker) },
                     )
