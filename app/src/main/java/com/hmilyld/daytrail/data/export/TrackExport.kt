@@ -201,10 +201,21 @@ object TrackExport {
     fun suggestedFileName(
         days: List<ExportDay>,
         extension: String,
+    ): String = suggestedFileNameFromDates(days.map { it.dateKey }, extension)
+
+    /**
+     * 只按日期算文件名。
+     *
+     * 打开文件选择器之前要先把名字定下来，这一步**不能**去加载轨迹点：
+     * 选「全部」时那是几万个点，用户会看到选择器迟迟不弹出来。
+     */
+    fun suggestedFileNameFromDates(
+        dates: List<String>,
+        extension: String,
     ): String {
-        if (days.isEmpty()) return "daytrail.$extension"
-        val first = days.first().dateKey
-        val last = days.last().dateKey
+        if (dates.isEmpty()) return "daytrail.$extension"
+        val first = dates.first()
+        val last = dates.last()
         return if (first == last) {
             "daytrail-$first.$extension"
         } else {

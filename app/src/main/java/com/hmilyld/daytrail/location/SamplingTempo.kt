@@ -95,6 +95,20 @@ class SamplingTempo(
     /** 连续静止从何时开始。用来判断有没有资格进休眠。 */
     private var stillSinceMs: Long? = null
 
+    /**
+     * 观察窗口：在此之前档位不低于对应下限。
+     *
+     * 两种窗口独立计时、可以叠加：
+     * - 运动事件 → 5 分钟、下限 MOVING（认真看一眼是不是要出门）
+     * - WiFi 切换 → 15 分钟、下限 STILL（先别睡，等下一次采样判断）
+     *
+     * 窗口只限制「最慢能慢到哪」，**不重置静止计时**——否则在公司拿一次手机
+     * 就等于重新开始计 15 分钟，一整天都进不了休眠。
+     */
+    private var motionUntilMs: Long = 0L
+
+    private var watchUntilMs: Long = 0L
+
     /** 当前档位对应的采样间隔。 */
     val intervalMs: Long
         get() =
@@ -150,16 +164,27 @@ class SamplingTempo(
                 else -> TempoTier.STILL
             }
 
+        // 观察窗口内不允许比下限更慢（运动窗口 MOVING，WiFi 守候窗口 STILL）。
+        // 两个窗口独立计时：运动窗口期间守候窗口照样在走，运动窗口结束后守候仍然生效。
+        val floor =
+            when {
+                sample.timestampMs < motionUntilMs -> TempoTier.MOVING
+                sample.timestampMs < watchUntilMs -> TempoTier.STILL
+                else -> null
+            }
+        val effective =
+            if (floor != null && target.ordinal > floor.ordinal) floor else target
+
         // 休眠没有「降档延迟」：静止时长本身就是延迟。
-        if (target == TempoTier.SLEEP) {
+        if (effective == TempoTier.SLEEP) {
             tier = TempoTier.SLEEP
             slowerSinceMs = null
             return
         }
 
         // 变快或不变：立即生效（SLEEP 的 ordinal 最大，所以任何更快的档位都立即生效）
-        if (target.ordinal <= tier.ordinal) {
-            tier = target
+        if (effective.ordinal <= tier.ordinal) {
+            tier = effective
             slowerSinceMs = null
             return
         }
@@ -171,20 +196,42 @@ class SamplingTempo(
             slowerSinceMs = since
         }
         if (sample.timestampMs - since >= DOWNGRADE_DELAY_MS) {
-            tier = target
+            tier = effective
             slowerSinceMs = null
         }
     }
 
     /**
-     * 显著运动触发：立刻退出慢速档（休眠或静止）。
+     * 显著运动触发：开一个 5 分钟的运动窗口。
      *
-     * 不知道速度，先按移动档跑；下一次采样会自己收敛，没动的话 5 分钟后降回静止。
+     * 窗口内按 MOVING（2 分钟）采，并禁止进入休眠；**不动静止计时**。
+     * 只有真的测到位移（速度 ≥ [MOVING_SPEED_MPS]）才会重置静止计时——
+     * 否则在公司拿一次手机就等于重新开始计 15 分钟，一天都睡不了。
      */
-    fun wake() {
-        tier = TempoTier.MOVING
+    fun wake(nowMs: Long) {
+        // 只升不降：探针是异步的，回来时可能已经是 DRIVING
+        if (tier.ordinal > TempoTier.MOVING.ordinal) {
+            tier = TempoTier.MOVING
+        }
         slowerSinceMs = null
-        stillSinceMs = null
+        motionUntilMs = nowMs + MOTION_WINDOW_MS
+    }
+
+    /**
+     * WiFi 切换探针：开一个 15 分钟的守候窗口。
+     *
+     * 不唤醒（下限 STILL），只是不允许马上去睡——人可能还在电梯里或楼下，
+     * 真正出发会在下一次采样里体现。
+     *
+     * 如果此刻正在休眠，要**立刻掉到静止档**，否则下一次采样要等一小时，
+     * 窗口就形同虚设。
+     */
+    fun watch(nowMs: Long) {
+        watchUntilMs = nowMs + WATCH_WINDOW_MS
+        if (tier == TempoTier.SLEEP) {
+            tier = TempoTier.STILL
+            slowerSinceMs = null
+        }
     }
 
     /** 停止记录后重置。 */
@@ -192,6 +239,8 @@ class SamplingTempo(
         tier = TempoTier.MOVING
         slowerSinceMs = null
         stillSinceMs = null
+        motionUntilMs = 0L
+        watchUntilMs = 0L
     }
 
     companion object {
@@ -220,5 +269,11 @@ class SamplingTempo(
 
         /** 休眠时的采样间隔。同时作为「还在记录」的心跳。 */
         const val SLEEP_INTERVAL_MS = 60 * 60_000L
+
+        /** 运动窗口：5 分钟内按 2 分钟档认真看一眼。 */
+        const val MOTION_WINDOW_MS = 5 * 60_000L
+
+        /** WiFi 守候窗口：15 分钟内不进入休眠，但保持静止档。 */
+        const val WATCH_WINDOW_MS = 15 * 60_000L
     }
 }

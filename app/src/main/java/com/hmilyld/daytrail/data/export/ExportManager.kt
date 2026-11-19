@@ -19,6 +19,18 @@ enum class ExportFormat(
     GPX("gpx", "application/gpx+xml"),
 }
 
+/**
+ * 导出范围。两个字段都为 null 表示全部。
+ *
+ * 用日期字符串而不是 DayKey，方便 UI 层直接拼装。
+ */
+data class ExportRange(
+    val from: String? = null,
+    val to: String? = null,
+) {
+    val isAll: Boolean get() = from == null && to == null
+}
+
 /** 导出结果。 */
 sealed interface ExportResult {
     data class Success(
@@ -45,16 +57,19 @@ class ExportManager(
     private val context: Context,
     private val repository: TrackRepository,
 ) {
-    /** 收集要导出的数据。不指定日期时导出全部。 */
-    private suspend fun collect(dayKey: DayKey? = null): List<ExportDay> {
-        val keys =
-            if (dayKey != null) {
-                listOf(dayKey)
-            } else {
-                repository.observeDaysWithDataFirst()
-            }
+    /** 范围内有数据的日期，升序。 */
+    private suspend fun dayKeys(range: ExportRange): List<DayKey> {
+        val all = repository.observeDaysWithDataFirst()
+        return when {
+            range.from == null || range.to == null -> all
+            else -> all.filter { it.value in range.from..range.to }
+        }
+    }
 
-        return keys
+    /** 收集要导出的数据。默认导出全部。 */
+    private suspend fun collect(range: ExportRange = ExportRange()): List<ExportDay> {
+        val places = repository.observePlaces().first()
+        return dayKeys(range)
             .mapNotNull { key ->
                 val points = repository.pointsOfDay(key)
                 if (points.isEmpty()) return@mapNotNull null
@@ -72,25 +87,28 @@ class ExportManager(
                         },
                     stays =
                         stays.map { stay ->
+                            val place = places.firstOrNull { it.place.id == stay.placeId }
                             ExportStay(
                                 point = GeoPoint(stay.latitude, stay.longitude),
                                 startMs = stay.startMs,
                                 endMs = stay.endMs,
-                                label = null,
+                                // 命名过的地点要带上名字，否则导出后又只剩「停留」
+                                label = place?.place?.label,
                             )
                         },
                 )
             }.sortedBy { it.dateKey }
     }
 
-    /** 导出建议的文件名。 */
+    /** 导出建议的文件名。只查日期，不加载轨迹点。 */
     suspend fun suggestedName(
         format: ExportFormat,
-        dayKey: DayKey? = null,
-    ): String {
-        val days = collect(dayKey)
-        return TrackExport.suggestedFileName(days, format.extension)
-    }
+        range: ExportRange = ExportRange(),
+    ): String =
+        TrackExport.suggestedFileNameFromDates(
+            dates = dayKeys(range).map { it.value },
+            extension = format.extension,
+        )
 
     /**
      * 写入用户选定的文件。
@@ -101,11 +119,11 @@ class ExportManager(
     suspend fun export(
         uri: Uri,
         format: ExportFormat,
-        dayKey: DayKey? = null,
+        range: ExportRange = ExportRange(),
     ): ExportResult =
         withContext(Dispatchers.IO) {
             try {
-                val days = collect(dayKey)
+                val days = collect(range)
                 if (days.isEmpty()) return@withContext ExportResult.Empty
 
                 val content =

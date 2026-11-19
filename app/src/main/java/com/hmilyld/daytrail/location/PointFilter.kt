@@ -72,6 +72,14 @@ class PointFilter(
     private val duplicateRadiusMeters: Double = 3.0,
     private val duplicateWindowMs: Long = 30_000L,
     /**
+     * 两次投递之间的最短间隔。
+     *
+     * 采样档最短是 30 秒，15 秒以内不可能是新的一轮采样——实测出现过
+     * 「唤醒后 requestOnce 与常驻订阅几乎同时各给一个点」，相距 45 米，
+     * 会在地图上留一根毛刺。这种点直接按噪声丢掉。
+     */
+    private val minSampleGapMs: Long = 15_000L,
+    /**
      * 静止心跳间隔。
      *
      * 位移小于定位误差时默认丢弃，否则静止时的 GPS 抖动会画出杂乱折线。
@@ -120,6 +128,11 @@ class PointFilter(
         val elapsedSec = (elapsedMs / 1000.0).coerceAtLeast(1.0)
         if (distance / elapsedSec > maxSpeedMps) {
             return FilterVerdict.Reject(RejectReason.TELEPORT)
+        }
+
+        // 同一轮采样的重复投递：距离再大也不是新的一轮
+        if (elapsedMs < minSampleGapMs) {
+            return FilterVerdict.Reject(RejectReason.WITHIN_NOISE)
         }
 
         // 位移小于两者的定位误差：无法区分「真的动了」还是「信号漂移」。

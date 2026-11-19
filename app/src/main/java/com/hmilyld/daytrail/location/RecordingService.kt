@@ -36,6 +36,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.util.Locale
 
 /**
  * 记录服务。
@@ -68,9 +69,15 @@ class RecordingService : Service() {
     private var placesJob: Job? = null
     private var sleepSettingJob: Job? = null
     private var motionJob: Job? = null
+    private var networkJob: Job? = null
 
     /** 显著运动触发器。设备没有该传感器时只能靠每小时心跳兜底。 */
     private val motionGate by lazy { MotionGate(this) }
+
+    /** 默认网络变化（WiFi ↔ 蜂窝）。用作「可能离开某栋楼」的免费线索。 */
+    private val networkWatcher by lazy { NetworkWatcher(this) }
+
+    private var lastNetworkProbeAtMs = 0L
 
     /**
      * 已知地点（家、公司）的坐标。
@@ -152,6 +159,7 @@ class RecordingService : Service() {
         appContainer.recordingState.setFixStale(false)
         appContainer.recordingState.setSleeping(false)
         appContainer.recordingState.update(RecordingState.RECORDING)
+        log("service", "开始记录")
         startForegroundCompat(buildNotification(getString(R.string.record_starting)))
 
         // 权限或开关有问题时，采集无法进行。这类问题必须让用户去处理，
@@ -173,11 +181,14 @@ class RecordingService : Service() {
                 // 档位必须在循环开始前读：早期实现写死了 POWER_SAVER，
                 // 用户在设置里选「高精度」完全没效果。
                 applyTier(appContainer.settingsStore.samplingTier.first())
+                // 记住「用户想记录」这件事，开机时据此提示恢复（不自动启动）
+                appContainer.settingsStore.setRecordingIntent(true)
                 sampleInterval.value = tempo.intervalMs
                 observeTierChanges()
                 observePlaces()
                 observeAutoSleep()
                 startMotionWake()
+                observeNetwork()
 
                 recorder.restoreLastPoint()
                 recorder.startAutoFlush()
@@ -249,6 +260,7 @@ class RecordingService : Service() {
         motionJob?.cancel()
         if (!motionGate.available) {
             Log.d(TAG, "设备没有显著运动传感器，只能靠每小时心跳兜底")
+            log("motion", "设备没有显著运动传感器")
             return
         }
         motionJob =
@@ -261,8 +273,9 @@ class RecordingService : Service() {
                         TAG,
                         if (tier == TempoTier.SLEEP) "显著运动，退出休眠" else "显著运动，退出静止档",
                     )
+                    log("motion", if (tier == TempoTier.SLEEP) "退出休眠" else "退出静止档")
                     val wasSleeping = tier == TempoTier.SLEEP
-                    tempo.wake()
+                    tempo.wake(System.currentTimeMillis())
                     if (wasSleeping) appContainer.recordingState.setSleeping(false)
                     sampleInterval.value = tempo.intervalMs
                     systemSource
@@ -273,9 +286,98 @@ class RecordingService : Service() {
             }
     }
 
+    /**
+     * 网络切换探测。
+     *
+     * WiFi 掉≠出门（电梯口、楼下都会掉），所以这里只做一次定位：
+     * 人还在原地就开 15 分钟守候窗口（按静止档采、不许睡），真离开了才切 2 分钟档。
+     *
+     * 两个护栏：新网络稳定 60 秒才探（过滤电梯里反复掉线），5 分钟内最多探一次。
+     */
+    private fun observeNetwork() {
+        networkJob?.cancel()
+        networkJob =
+            scope.launch {
+                networkWatcher.events().collect { transport ->
+                    delay(NETWORK_SETTLE_MS)
+                    if (networkWatcher.current() != transport) return@collect
+
+                    val now = System.currentTimeMillis()
+                    if (now - lastNetworkProbeAtMs < NETWORK_PROBE_COOLDOWN_MS) return@collect
+                    if (tempo.tier != TempoTier.STILL && tempo.tier != TempoTier.SLEEP) {
+                        return@collect
+                    }
+
+                    lastNetworkProbeAtMs = now
+                    log("network", "网络切换为 $transport")
+                    probeAfterNetworkChange()
+                }
+            }
+    }
+
+    /** 网络切换后取一个点，判断是不是真的离开了。 */
+    private suspend fun probeAfterNetworkChange() {
+        val fix =
+            systemSource.requestOnce(
+                highAccuracy = true,
+                timeoutMs = NETWORK_PROBE_TIMEOUT_MS,
+            )
+
+        if (fix == null) {
+            // 电梯、地库拿不到位置：不确定，先别睡，等下一次采样判断
+            Log.d(TAG, "网络切换探针失败，进入守候窗口")
+            log("probe", "探针失败，进入守候窗口")
+            enterWatchWindow()
+            return
+        }
+
+        onFix(fix)
+
+        val point = fix.toGcj02()
+        val nearest = knownPlaces.minOfOrNull { place -> distanceMeters(place, point) }
+        val distanceText = nearest?.toInt()?.toString() ?: "未知"
+
+        when (PlaceProbe.decide(nearest)) {
+            ProbeAction.WATCH -> {
+                Log.d(TAG, "网络切换后仍在地点内（$distanceText m），进入守候窗口")
+                log("probe", "距地点 $distanceText m，进入守候窗口")
+                enterWatchWindow()
+            }
+
+            ProbeAction.WAKE -> {
+                Log.d(TAG, "网络切换后已离开地点，按出发处理")
+                log(
+                    "probe",
+                    if (nearest == null) "没有已知地点，按出发处理" else "距地点 $distanceText m，按出发处理",
+                )
+                tempo.wake(System.currentTimeMillis())
+                finishProbe()
+            }
+        }
+    }
+
+    /** 守候：不唤醒，只保证 15 分钟内不睡。 */
+    private suspend fun enterWatchWindow() {
+        tempo.watch(System.currentTimeMillis())
+        finishProbe()
+    }
+
+    /**
+     * 探针之后的收尾。
+     *
+     * `onFix` 可能刚把通知改成「已休眠」，而 `watch()` 又把档位拉回静止档；
+     * 不刷新的话通知会停在错误的文案上，最长持续到下一个采样点（10 分钟）。
+     */
+    private suspend fun finishProbe() {
+        appContainer.recordingState.setSleeping(false)
+        sampleInterval.value = tempo.intervalMs
+        updateNotification()
+    }
+
     private fun pauseRecording() {
         cancelJobs()
         recorder.stopAutoFlush()
+        log("service", "暂停")
         appContainer.recordingState.update(RecordingState.PAUSED)
         appContainer.recordingState.setLocationIssue(null)
         appContainer.recordingState.setFixStale(false)
@@ -286,6 +388,9 @@ class RecordingService : Service() {
     /** 定位异常后的手动重试。重置状态并重新开始采集。 */
     private fun retryRecording() {
         Log.d(TAG, "用户手动重试定位")
+        // 采集循环还在跑时 startRecording 会直接返回，所以必须先停掉旧任务。
+        // 否则「录制途中被关掉定位」这种情况，点重试等于没点。
+        cancelJobs()
         appContainer.recordingState.setLocationIssue(null)
         startRecording()
     }
@@ -293,8 +398,10 @@ class RecordingService : Service() {
     private fun stopRecording() {
         cancelJobs()
         recorder.stopAutoFlush()
+        log("service", "停止记录")
         scope.launch {
             recorder.finish()
+            appContainer.settingsStore.setRecordingIntent(false)
             appContainer.recordingState.setFixStale(false)
             appContainer.recordingState.update(RecordingState.IDLE)
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -315,6 +422,8 @@ class RecordingService : Service() {
         sleepSettingJob = null
         motionJob?.cancel()
         motionJob = null
+        networkJob?.cancel()
+        networkJob = null
     }
 
     // ---- 采样 ----
@@ -369,11 +478,26 @@ class RecordingService : Service() {
             knownPlaces.any { place ->
                 distanceMeters(place, point) <= PlaceResolver.MATCH_RADIUS_METERS
             }
+        val previousTier = tempo.tier
         tempo.observe(
             previous = previousAccepted,
             sample = TempoSample(fix.timestampMs, point),
             insideKnownPlace = insideKnownPlace,
         )
+        if (tempo.tier != previousTier) {
+            val elapsedSec =
+                previousAccepted
+                    ?.let { (fix.timestampMs - it.timestampMs) / 1000.0 }
+                    ?.coerceAtLeast(1.0)
+                    ?: 1.0
+            val speed =
+                previousAccepted?.let { distanceMeters(it.point, point) / elapsedSec } ?: 0.0
+            log(
+                "tier",
+                "$previousTier→${tempo.tier} 速度=${String.format(Locale.US, "%.1f", speed)}m/s " +
+                    "在已知地点=$insideKnownPlace",
+            )
+        }
         syncSleepState()
 
         // 地图上的位置圆点跟着这条路走，不再自己轮询定位
@@ -413,6 +537,15 @@ class RecordingService : Service() {
                 while (isActive) {
                     delay(WATCHDOG_TICK_MS)
 
+                    // 录制途中关掉定位开关 / 权限被回收：只在启动时检查会一直装作在记录。
+                    // 这里每 60 秒对一次状态，恢复后自动清掉提示。
+                    val issue = currentIssue()
+                    if (issue != appContainer.recordingState.locationIssue.value) {
+                        appContainer.recordingState.setLocationIssue(issue)
+                        log("issue", issue?.name ?: "已恢复")
+                        if (issue != null) notify(getString(R.string.record_location_failed))
+                    }
+
                     // 休眠时「很久没有新点位」是预期行为，不是异常：
                     // 采样间隔本来就是 1 小时。既不能给界面打 fixStale，
                     // 也不能把通知改成「正在获取定位」——那会把「已休眠」的提示顶掉，
@@ -441,6 +574,14 @@ class RecordingService : Service() {
         }
 
     // ---- 通知 ----
+
+    /** 写一条诊断日志。失败不影响记录主流程。 */
+    private fun log(
+        category: String,
+        detail: String,
+    ) {
+        scope.launch { appContainer.diagnosticLog.record(category, detail) }
+    }
 
     /**
      * 刷新通知文案。
@@ -551,7 +692,7 @@ class RecordingService : Service() {
 
     companion object {
         private const val TAG = "RecordingService"
-        private const val CHANNEL_ID = "recording"
+        const val CHANNEL_ID = "recording"
         private const val NOTIFICATION_ID = 1001
 
         /**
@@ -567,6 +708,15 @@ class RecordingService : Service() {
 
         /** 休眠被运动唤醒后，主动补一个点的等待上限。 */
         private const val WAKE_FIX_TIMEOUT_MS = 20_000L
+
+        /** 网络切换后等多久确认「新网络稳定」，过滤电梯、地库里的反复掉线。 */
+        private const val NETWORK_SETTLE_MS = 60_000L
+
+        /** 两次网络探针之间的最短间隔。 */
+        private const val NETWORK_PROBE_COOLDOWN_MS = 5 * 60_000L
+
+        /** 网络探针的定位超时。拿不到就进入守候窗口，不重试。 */
+        private const val NETWORK_PROBE_TIMEOUT_MS = 20_000L
 
         /** 看门狗轮询间隔。 */
         private const val WATCHDOG_TICK_MS = 60_000L

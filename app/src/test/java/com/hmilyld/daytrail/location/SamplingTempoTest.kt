@@ -188,10 +188,52 @@ class SamplingTempoTest {
         stayStill(fromMinute = 0, toMinute = 70)
         assertEquals(TempoTier.SLEEP, tempo.tier)
 
-        tempo.wake()
+        tempo.wake(nowMs = 1_000_000L + 70 * 60_000L)
 
         assertEquals(TempoTier.MOVING, tempo.tier)
         assertEquals(SamplingPreset.POWER_SAVER.profile.movingMs, tempo.intervalMs)
+    }
+
+    @Test
+    fun `wake does not downgrade driving`() {
+        // 探针是异步的：回来时可能已经在开车，不能被 wake 压回 MOVING
+        tempo.observe(sample(0.0, 0), sample(1_200.0, 60))
+        assertEquals(TempoTier.DRIVING, tempo.tier)
+
+        tempo.wake(nowMs = 1_000_000L + 120 * 60_000L)
+
+        assertEquals(TempoTier.DRIVING, tempo.tier)
+    }
+
+    @Test
+    fun `motion wake does not reset the still timer`() {
+        stayStill(fromMinute = 0, toMinute = 70)
+        assertEquals(TempoTier.SLEEP, tempo.tier)
+
+        // 在公司拿起手机：开 5 分钟运动窗口，但「已静止多久」不清零
+        tempo.wake(nowMs = 1_000_000L + 70 * 60_000L)
+        tempo.observe(sample(0.0, 70 * 60L), sample(0.0, 72 * 60L))
+        assertEquals("窗口内不允许回到休眠", TempoTier.MOVING, tempo.tier)
+
+        // 窗口结束后，静止时长仍然足够，直接回到休眠
+        tempo.observe(sample(0.0, 72 * 60L), sample(0.0, 76 * 60L))
+        assertEquals(TempoTier.SLEEP, tempo.tier)
+    }
+
+    @Test
+    fun `watch window blocks sleep but keeps the still cadence`() {
+        stayStill(fromMinute = 0, toMinute = 70)
+        assertEquals(TempoTier.SLEEP, tempo.tier)
+
+        // WiFi 掉了，但人还在楼里：15 分钟内不许睡，但按静止档采
+        tempo.watch(nowMs = 1_000_000L + 70 * 60_000L)
+        tempo.observe(sample(0.0, 70 * 60L), sample(0.0, 71 * 60L))
+        assertEquals(TempoTier.STILL, tempo.tier)
+        assertEquals(SamplingPreset.POWER_SAVER.profile.stillMs, tempo.intervalMs)
+
+        // 窗口过期后回到休眠
+        tempo.observe(sample(0.0, 71 * 60L), sample(0.0, 86 * 60L))
+        assertEquals(TempoTier.SLEEP, tempo.tier)
     }
 
     @Test

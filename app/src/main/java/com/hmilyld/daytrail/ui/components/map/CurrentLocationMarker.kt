@@ -79,6 +79,7 @@ fun CurrentLocationMarker(
     fun place(
         map: AMap,
         point: GeoPoint,
+        center: Boolean = true,
     ) {
         val position = LatLng(point.latitude, point.longitude)
         val existing = marker
@@ -98,7 +99,7 @@ fun CurrentLocationMarker(
             runCatching { existing.position = position }
         }
 
-        if (autoCenterOnFirstFix && !centered) {
+        if (center && autoCenterOnFirstFix && !centered) {
             centered = true
             runCatching {
                 map.animateCamera(
@@ -121,6 +122,18 @@ fun CurrentLocationMarker(
 
         lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             val source = SystemLocationSource(context)
+
+            // 先用缓存位置把圆点画出来，不必等一次真实定位。
+            // 不居中：镜头交给下面拿到的真实位置，避免先跳到旧位置再跳回来。
+            if (marker == null) {
+                val cached = source.lastKnownFix()
+                val ageMs =
+                    cached?.let { System.currentTimeMillis() - it.timestampMs } ?: Long.MAX_VALUE
+                if (cached != null && cached.errorCode == 0 && ageMs <= CACHED_SEED_MAX_AGE_MS) {
+                    place(map, cached.toGcj02(), center = false)
+                }
+            }
+
             var hasFix = false
             while (isActive) {
                 val fix = source.requestOnce(highAccuracy = true, timeoutMs = 8_000L)
@@ -145,6 +158,9 @@ fun CurrentLocationMarker(
 
 /** 尚未取到位置时的重试间隔。 */
 private const val RETRY_INTERVAL_MS = 5_000L
+
+/** 缓存位置最多允许多旧——太旧的点画出来只会误导。 */
+private const val CACHED_SEED_MAX_AGE_MS = 6 * 60 * 60 * 1000L
 
 /**
  * 未记录时的刷新间隔。
