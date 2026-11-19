@@ -404,8 +404,23 @@ private fun RecordingNotices(
 ) {
     val recording = state.recordingState == RecordingState.RECORDING
     val issue = state.locationIssue
+    val showSleeping = state.sleeping && recording
+    val showStale = state.fixStale && recording
 
-    val content: @Composable () -> Unit = {
+    // 没有任何提示时不要留一个空盒子：那会在地图和标题之间塞进一段
+    // 看不见的间距，看起来像标题和地图没对齐。
+    if (issue == null && !showSleeping && !showStale) return
+
+    Box(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(
+                    start = TrailSpacing.gutter,
+                    end = TrailSpacing.gutter,
+                    bottom = TrailSpacing.md,
+                ),
+    ) {
         when {
             issue != null ->
                 CalloutBanner(
@@ -424,29 +439,20 @@ private fun RecordingNotices(
                     onAction = onRetry,
                 )
 
-            state.sleeping && recording ->
+            showSleeping ->
                 CalloutBanner(
                     text = stringResource(R.string.today_sleeping_hint),
                     tone = CalloutTone.INFO,
                     icon = Icons.Outlined.Bedtime,
                 )
 
-            state.fixStale && recording ->
+            else ->
                 CalloutBanner(
                     text = stringResource(R.string.today_fix_stale),
                     tone = CalloutTone.WARNING,
                     icon = Icons.Outlined.LocationOff,
                 )
         }
-    }
-
-    Box(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = TrailSpacing.gutter),
-    ) {
-        content()
     }
 }
 

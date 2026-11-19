@@ -19,6 +19,13 @@ import com.amap.api.maps.TextureMapView
  *
  * 生命周期由 `DayTrailApplication` 负责：应用退出时才真正销毁。
  *
+ * **为什么需要 attach/release 计数**：
+ * 页面转场时 `NavDisplay` 会短暂同时组合两个页面（进入单日详情的那 200ms），
+ * 两个 `AmapView` 拿着同一个实例。后进来的把 View 抢过去，
+ * 先离开的那个在 `onDispose` 里调用 `pause()`——于是**正在用的地图被暂停**，
+ * 表现为白屏一次、之后点击/拖动/缩放全部没有反应，而且不会自己恢复。
+ * 计数到 0 才暂停，才能真正只在「没有任何页面在用」时停下渲染。
+ *
  * **为什么用强引用而不是 WeakReference**：
  * 早期版本用 `WeakReference` 缓存，另用一个 `Boolean` 标记是否已 `onCreate`。
  * 一旦实例被 GC 回收，新建的 View 会因标志位仍为 true 而跳过 `onCreate()`，
@@ -30,6 +37,9 @@ object MapViewCache {
 
     /** 缓存的 MapView。用 application context 创建，强引用不会泄漏 Activity。 */
     private var cachedView: TextureMapView? = null
+
+    /** 当前有几个页面在用它。归零才允许暂停。 */
+    private var holders: Int = 0
 
     /**
      * 取得（或创建）地图视图。
@@ -49,6 +59,22 @@ object MapViewCache {
         cachedView = view
         Log.d(TAG, "创建地图实例")
         return view
+    }
+
+    /** 页面进入组合：计数 +1，并确保在渲染。 */
+    fun acquire() {
+        holders++
+        Log.d(TAG, "acquire -> $holders")
+        resume()
+    }
+
+    /** 页面离开组合：计数 -1，只有最后一个离开时才暂停。 */
+    fun release() {
+        holders = (holders - 1).coerceAtLeast(0)
+        Log.d(TAG, "release -> $holders")
+        if (holders == 0) {
+            pause()
+        }
     }
 
     /** 页面可见时调用。 */
@@ -73,6 +99,7 @@ object MapViewCache {
             (view.parent as? ViewGroup)?.removeView(view)
         }
         cachedView = null
+        holders = 0
     }
 
     /** 地图实例是否已经创建。 */
