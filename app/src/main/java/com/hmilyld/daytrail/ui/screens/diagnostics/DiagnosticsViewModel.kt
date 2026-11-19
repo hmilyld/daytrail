@@ -2,6 +2,7 @@ package com.hmilyld.daytrail.ui.screens.diagnostics
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.hmilyld.daytrail.BuildConfig
 import com.hmilyld.daytrail.data.db.entity.DiagnosticEventEntity
 import com.hmilyld.daytrail.data.diagnostics.DiagnosticLog
 import kotlinx.coroutines.flow.SharingStarted
@@ -35,6 +36,7 @@ class DiagnosticsViewModel(
         return DiagnosticLog.toJson(
             events = log.since(now - DiagnosticLog.RETENTION_MS),
             exportedAtMs = now,
+            appVersion = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
         )
     }
 

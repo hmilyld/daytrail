@@ -20,9 +20,11 @@ class DiagnosticLogTest {
                 events = listOf(event),
                 exportedAtMs = 1_700_000_060_000L,
                 zone = ZoneId.of("Asia/Shanghai"),
+                appVersion = "0.3.0 (3)",
             )
 
         assertTrue(json.contains("\"exportedAt\""))
+        assertTrue(json.contains("\"appVersion\":\"0.3.0 (3)\""))
         assertTrue(json.contains("\"category\":\"tier\""))
         assertTrue(json.contains("\"detail\":\"STILL→MOVING 速度=1.2m/s\""))
     }

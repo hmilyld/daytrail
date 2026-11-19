@@ -73,6 +73,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.hmilyld.daytrail.AppContainer
+import com.hmilyld.daytrail.BuildConfig
 import com.hmilyld.daytrail.R
 import com.hmilyld.daytrail.data.export.ExportFormat
 import com.hmilyld.daytrail.data.export.ExportRange
@@ -553,7 +554,14 @@ private fun SettingsContent(
                         SettingsInfoRow(
                             icon = Icons.Outlined.Info,
                             title = stringResource(R.string.settings_version),
-                            subtitle = "0.1.0",
+                            // 从 BuildConfig 读，别再写死：之前这里硬编码 0.1.0，
+                            // 连发三版都没变，反馈问题时版本号是错的。
+                            subtitle =
+                                stringResource(
+                                    R.string.settings_version_value,
+                                    BuildConfig.VERSION_NAME,
+                                    BuildConfig.VERSION_CODE,
+                                ),
                         )
                     }
 

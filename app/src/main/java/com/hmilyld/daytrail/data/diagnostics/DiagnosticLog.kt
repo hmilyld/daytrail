@@ -55,6 +55,7 @@ class DiagnosticLog(
             events: List<DiagnosticEventEntity>,
             exportedAtMs: Long,
             zone: ZoneId = ZoneId.systemDefault(),
+            appVersion: String = "",
         ): String {
             val body =
                 events.joinToString(",") { event ->
@@ -63,7 +64,8 @@ class DiagnosticLog(
                         """"detail":"${escape(event.detail)}"}"""
                 }
             val exportedAt = FORMAT.format(Instant.ofEpochMilli(exportedAtMs).atZone(zone))
-            return """{"exportedAt":"$exportedAt","events":[$body]}"""
+            return """{"exportedAt":"$exportedAt","appVersion":"${escape(appVersion)}",""" +
+                """"events":[$body]}"""
         }
 
         private fun escape(value: String): String =

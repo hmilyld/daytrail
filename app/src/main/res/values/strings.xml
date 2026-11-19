@@ -74,6 +74,7 @@
     <string name="settings_export_desc">GeoJSON 与 GPX，可导进其他地图</string>
     <string name="settings_storage">数据占用</string>
     <string name="settings_version">版本</string>
+    <string name="settings_version_value">%1$s（%2$d）</string>
 
     <!-- 地点 -->
     <string name="places_title">地点</string>
