@@ -71,8 +71,11 @@ fun EmptyState(
 }
 
 /**
- * 统计数字。用于今日页底部三宫格。
- * 数值用 titleLarge，单位用 labelMedium，避免单位抢视觉焦点。
+ * 统计数字。今日页底部的三宫格用。
+ *
+ * 结构是「大数字 + 单位 + 小标签」：数字用 `displaySmall` 或 `headlineSmall`，
+ * 单位贴底、标签在下，避免三个数字一样重、用户分不清主次。
+ * 强调项（里程）用更大的字号，其余保持同一基线。
  */
 @Composable
 fun StatBlock(
@@ -80,32 +83,44 @@ fun StatBlock(
     unit: String,
     label: String,
     modifier: Modifier = Modifier,
+    highlight: Boolean = false,
 ) {
     Column(
-        modifier = modifier.heightIn(min = 56.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier =
+            modifier
+                .heightIn(min = 56.dp)
+                .padding(horizontal = 4.dp),
         verticalArrangement = Arrangement.Center,
     ) {
         Row(
             verticalAlignment = Alignment.Bottom,
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            horizontalArrangement = Arrangement.spacedBy(3.dp),
         ) {
             Text(
                 text = value,
-                style = MaterialTheme.typography.titleLarge,
+                style =
+                    if (highlight) {
+                        MaterialTheme.typography.displaySmall
+                    } else {
+                        MaterialTheme.typography.headlineSmall
+                    },
                 color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
             )
-            Text(
-                text = unit,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 2.dp),
-            )
+            if (unit.isNotEmpty()) {
+                Text(
+                    text = unit,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 6.dp),
+                )
+            }
         }
         Text(
             text = label,
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 2.dp),
         )
     }
 }

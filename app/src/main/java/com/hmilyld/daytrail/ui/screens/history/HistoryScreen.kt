@@ -120,25 +120,51 @@ private fun HistoryContent(
                 }
 
                 if (state.monthTotalKm > 0.0) {
-                    Text(
-                        text =
-                            stringResource(
-                                R.string.history_month_total,
-                                DistanceFormat.kilometers(state.monthTotalKm * 1000.0),
-                            ),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(top = 4.dp),
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceContainer,
+                        shape = MaterialTheme.shapes.medium,
+                        modifier = Modifier.padding(top = 14.dp),
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                text = stringResource(R.string.history_month_total_label),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Row(verticalAlignment = Alignment.Bottom) {
+                                Text(
+                                    text =
+                                        DistanceFormat.kilometers(
+                                            state.monthTotalKm * 1000.0,
+                                        ),
+                                    style = MaterialTheme.typography.displaySmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                                Text(
+                                    text = stringResource(R.string.history_unit_km),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
+                                )
+                            }
+                            MonthHeatmap(
+                                year = state.year,
+                                month = state.month,
+                                monthlyKm = state.monthlyKm,
+                                modifier = Modifier.padding(top = 16.dp),
+                            )
+                            HeatLegend(modifier = Modifier.padding(top = 12.dp))
+                        }
+                    }
+                } else {
+                    MonthHeatmap(
+                        year = state.year,
+                        month = state.month,
+                        monthlyKm = state.monthlyKm,
+                        modifier = Modifier.padding(top = 14.dp),
                     )
+                    HeatLegend(modifier = Modifier.padding(top = 8.dp))
                 }
-
-                MonthHeatmap(
-                    year = state.year,
-                    month = state.month,
-                    monthlyKm = state.monthlyKm,
-                    modifier = Modifier.padding(top = 12.dp),
-                )
-                HeatLegend(modifier = Modifier.padding(top = 8.dp))
             }
         }
 
@@ -276,27 +302,41 @@ private fun DayCardItem(
         shape = MaterialTheme.shapes.medium,
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 18.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = day.title,
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
-                Text(
-                    text = stringResource(R.string.history_distance_km, formatKm(day.distanceKm)),
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.primary,
+                HeatBar(
+                    level = day.heatLevel,
+                    modifier = Modifier.padding(top = 12.dp),
                 )
             }
-            HeatBar(
-                level = day.heatLevel,
-                modifier = Modifier.padding(top = 10.dp),
-            )
+            Row(
+                verticalAlignment = Alignment.Bottom,
+                modifier = Modifier.padding(start = 16.dp),
+            ) {
+                Text(
+                    text = formatKm(day.distanceKm),
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                )
+                Text(
+                    text = stringResource(R.string.history_unit_km),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 3.dp, bottom = 4.dp),
+                )
+            }
         }
     }
 }
