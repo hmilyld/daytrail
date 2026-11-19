@@ -16,8 +16,8 @@ data class StaySegment(
 /**
  * 停留识别（纯逻辑，可单测）。
  *
- * 算法：滑动窗口。以窗口起点为中心，若后续点在 [radiusMeters] 内且持续
- * 时间达到 [minDurationMs]，则记一段停留，取窗口内**圈内点**的质心作为停留点。
+ * 算法：滑动窗口。先以窗口起点为圆心长出一个候选段；确认后**再以候选段的质心
+ * 重新长一遍**，最后取窗口内圈内点的质心作为停留点。
  *
  * 为什么不用「连续两点距离小于阈值」的简单判定：
  * 等红灯时车不动但只是短暂停顿，简单判定会产出一堆几秒的假停留；
@@ -29,7 +29,12 @@ data class StaySegment(
  * **退出迟滞**（[maxConsecutiveOutside]）：窗口不因单个出圈点而结束。
  * 实测数据里，人在家或公司时会出现 50–80m 的慢漂移（0.1–0.6 m/s，
  * 与真实走动无法区分），旧实现遇到第一个出圈点就收尾，一个漂移点
- * 就能把 5 小时的停留切成三段。现在要求连续多个点都在圈外才判定离开。
+ * 就能把 5 小时的停留切成三段。
+ *
+ * **质心重定心**（[REFINE_PASSES]）：首点常常落在停留区域的边缘。
+ * 实测办公室那次，首点离真实质心 55m，于是「离质心只有 36m」的一个点
+ * 在「离首点」的判据下变成 83m，叠加前后一个 178m 的漂移点，刚好凑够
+ * 连续两个出圈，5 小时被切成 154 + 67 + 101 三段。以质心为准后它们是一段。
  *
  * 注意：迟滞只影响「判定」，停留的 [StaySegment.endMs] 仍是**最后一个圈内点**，
  * 不是确认离开的那个点——否则时间轴会凭空多出一段。
@@ -51,6 +56,24 @@ class StayDetector(
         val point: GeoPoint,
     )
 
+    /** 一次生长的结果。 */
+    private data class Window(
+        val count: Int,
+        val lastInside: Int,
+        val latSum: Double,
+        val lonSum: Double,
+        val maxRadius: Double,
+    ) {
+        /** 圈内点的质心。计数为 0 时返回 0，调用方不会用到这个值。 */
+        val centroid: GeoPoint
+            get() =
+                if (count == 0) {
+                    GeoPoint(0.0, 0.0)
+                } else {
+                    GeoPoint(latSum / count, lonSum / count)
+                }
+    }
+
     /**
      * 从按时间升序的点序列里识别停留段。
      *
@@ -64,56 +87,98 @@ class StayDetector(
         var anchorIndex = 0
 
         while (anchorIndex < points.size - 1) {
-            val anchor = points[anchorIndex]
-            var lastInsideIndex = anchorIndex
-            var latSum = 0.0
-            var lonSum = 0.0
-            var maxRadius = 0.0
-            var count = 0
-            var consecutiveOutside = 0
-
-            var cursor = anchorIndex
-            while (cursor < points.size) {
-                val candidate = points[cursor]
-                val distance = distanceMeters(anchor.point, candidate.point)
-                if (distance > radiusMeters) {
-                    // 先记一笔，连续出圈的个数到了才真的收尾。
-                    // 单个漂移点被跳过，既不计入质心，也不算作离开。
-                    consecutiveOutside++
-                    if (consecutiveOutside >= outsideLimit) break
-                    cursor++
-                    continue
-                }
-
-                consecutiveOutside = 0
-                latSum += candidate.point.latitude
-                lonSum += candidate.point.longitude
-                maxRadius = maxOf(maxRadius, distance)
-                count++
-                lastInsideIndex = cursor
-                cursor++
-            }
-
-            val duration = points[lastInsideIndex].timestampMs - anchor.timestampMs
-            if (count >= 2 && duration >= minDurationMs) {
-                val centroid =
-                    GeoPoint(
-                        latitude = latSum / count,
-                        longitude = lonSum / count,
-                    )
-                result +=
-                    StaySegment(
-                        startMs = anchor.timestampMs,
-                        endMs = points[lastInsideIndex].timestampMs,
-                        point = centroid,
-                        radiusMeters = maxRadius,
-                    )
-                anchorIndex = lastInsideIndex + 1
-            } else {
+            val window = grow(points, anchorIndex, points[anchorIndex].point, outsideLimit)
+            if (!confirmed(points, anchorIndex, window)) {
                 anchorIndex++
+                continue
             }
+
+            val refined = refine(points, anchorIndex, window, outsideLimit)
+            result +=
+                StaySegment(
+                    startMs = points[anchorIndex].timestampMs,
+                    endMs = points[refined.lastInside].timestampMs,
+                    point = refined.centroid,
+                    radiusMeters = refined.maxRadius,
+                )
+            anchorIndex = refined.lastInside + 1
         }
 
         return result
+    }
+
+    /** 用候选段质心重新生长，只接受「更长」的结果。 */
+    private fun refine(
+        points: List<TimedPoint>,
+        startIndex: Int,
+        initial: Window,
+        outsideLimit: Int,
+    ): Window {
+        var best = initial
+        var center = initial.centroid
+
+        repeat(REFINE_PASSES) {
+            val next = grow(points, startIndex, center, outsideLimit)
+            if (next.lastInside > best.lastInside) {
+                best = next
+                center = next.centroid
+            }
+        }
+
+        return best
+    }
+
+    /** 从 [startIndex] 开始，以 [center] 为圆心生长窗口。 */
+    private fun grow(
+        points: List<TimedPoint>,
+        startIndex: Int,
+        center: GeoPoint,
+        outsideLimit: Int,
+    ): Window {
+        var lastInside = startIndex
+        var latSum = 0.0
+        var lonSum = 0.0
+        var maxRadius = 0.0
+        var count = 0
+        var consecutiveOutside = 0
+        var cursor = startIndex
+
+        while (cursor < points.size) {
+            val distance = distanceMeters(center, points[cursor].point)
+            if (distance > radiusMeters) {
+                // 先记一笔，连续出圈的个数到了才真的收尾。
+                // 单个漂移点被跳过，既不计入质心，也不算作离开。
+                consecutiveOutside++
+                if (consecutiveOutside >= outsideLimit) break
+                cursor++
+                continue
+            }
+
+            consecutiveOutside = 0
+            latSum += points[cursor].point.latitude
+            lonSum += points[cursor].point.longitude
+            maxRadius = maxOf(maxRadius, distance)
+            count++
+            lastInside = cursor
+            cursor++
+        }
+
+        return Window(count, lastInside, latSum, lonSum, maxRadius)
+    }
+
+    /** 一段停留是否成立：至少两个圈内点，且持续够久。 */
+    private fun confirmed(
+        points: List<TimedPoint>,
+        startIndex: Int,
+        window: Window,
+    ): Boolean {
+        if (window.count < 2) return false
+        val duration = points[window.lastInside].timestampMs - points[startIndex].timestampMs
+        return duration >= minDurationMs
+    }
+
+    private companion object {
+        /** 重定心迭代次数。实测两遍就收敛，再多收益很小。 */
+        const val REFINE_PASSES = 2
     }
 }
