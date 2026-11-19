@@ -36,10 +36,15 @@ data class ExportPoint(
  * 导出时必须转回去，否则在 Google Earth、Garmin 等工具里会整体偏移 500 米。
  * 这一点很容易漏掉——文件能打开、轨迹形状也对，就是位置不对。
  *
+ * **时间**：写成带偏移的本地时间（`2026-11-18T15:56:20+08:00`），而不是 UTC 的 `Z`。
+ * 之前的写法让文件里出现「`date` 是本地日期、`times` 是 UTC」的混搭：
+ * 本地凌晨 00:30 会写成前一天的 `16:30Z`，日期属性与时间对不上。
+ * 带偏移的 ISO 8601 仍然是唯一的瞬时值，GPX 的 `xsd:dateTime` 也允许偏移。
+ *
  * 两个格式都是纯字符串拼接，不依赖 Android，可以直接单测。
  */
 object TrackExport {
-    private val ISO_INSTANT: DateTimeFormatter = DateTimeFormatter.ISO_INSTANT
+    private val ISO_OFFSET: DateTimeFormatter = DateTimeFormatter.ISO_OFFSET_DATE_TIME
 
     /**
      * GeoJSON FeatureCollection。
@@ -48,7 +53,10 @@ object TrackExport {
      * 断点不特殊处理——导入方看到一条直连线比丢失数据好，
      * 且 GeoJSON 本身没有「段」的概念。
      */
-    fun toGeoJson(days: List<ExportDay>): String {
+    fun toGeoJson(
+        days: List<ExportDay>,
+        zone: ZoneId = ZoneId.systemDefault(),
+    ): String {
         val features = mutableListOf<String>()
 
         days.forEach { day ->
@@ -62,7 +70,7 @@ object TrackExport {
                 // 排查「轨迹为什么断了」时必须看时间。
                 val times =
                     day.points.joinToString(",") { exported ->
-                        "\"${iso(exported.timestampMs)}\""
+                        "\"${iso(exported.timestampMs, zone)}\""
                     }
                 features +=
                     """{"type":"Feature","properties":{"date":"${day.dateKey}",""" +
@@ -77,8 +85,8 @@ object TrackExport {
                 val minutes = (stay.endMs - stay.startMs) / 60_000
                 features +=
                     """{"type":"Feature","properties":{"date":"${day.dateKey}",""" +
-                    """"kind":"stay","label":"$label","start":"${iso(stay.startMs)}",""" +
-                    """"end":"${iso(stay.endMs)}","minutes":$minutes},""" +
+                    """"kind":"stay","label":"$label","start":"${iso(stay.startMs, zone)}",""" +
+                    """"end":"${iso(stay.endMs, zone)}","minutes":$minutes},""" +
                     """"geometry":{"type":"Point","coordinates":""" +
                     """[${num(wgs.longitude)},${num(wgs.latitude)}]}}"""
             }
@@ -95,7 +103,10 @@ object TrackExport {
      * 每天一个 `<trk>`，`<trkseg>` 按断点切开：相邻点间隔超过 2 公里时不连成一段，
      * 否则导入方会画出穿越建筑、河流的直线。
      */
-    fun toGpx(days: List<ExportDay>): String {
+    fun toGpx(
+        days: List<ExportDay>,
+        zone: ZoneId = ZoneId.systemDefault(),
+    ): String {
         val body = StringBuilder()
 
         days.forEach { day ->
@@ -121,7 +132,7 @@ object TrackExport {
                 body.append(
                     "      <trkpt lat=\"${num(wgs.latitude)}\" lon=\"${num(wgs.longitude)}\">",
                 )
-                body.append("<time>${iso(current.timestampMs)}</time>")
+                body.append("<time>${iso(current.timestampMs, zone)}</time>")
                 body.append("</trkpt>\n")
                 previous = current
             }
@@ -157,8 +168,15 @@ object TrackExport {
     /** 经纬度保留 7 位小数，约 1 厘米精度，足够且不冗长。 */
     private fun num(value: Double): String = String.format(Locale.US, "%.7f", value)
 
-    private fun iso(timestampMs: Long): String =
-        ISO_INSTANT.format(Instant.ofEpochMilli(timestampMs))
+    /**
+     * 带偏移的本地时间。仍然是唯一的瞬时值，但读文件的人不用自己加 8 小时。
+     *
+     * 用 `ISO_OFFSET_DATE_TIME` 而不是 `ISO_INSTANT`：后者只能输出 UTC 的 `Z`。
+     */
+    private fun iso(
+        timestampMs: Long,
+        zone: ZoneId,
+    ): String = ISO_OFFSET.format(Instant.ofEpochMilli(timestampMs).atZone(zone))
 
     private fun escapeJson(value: String): String =
         value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", " ")
@@ -194,7 +212,7 @@ object TrackExport {
         }
     }
 
-    /** 导出时间用的时区。导出内容用 UTC，但文件名用本地日期。 */
+    /** 导出时间用的时区。导出内容与文件名统一用本地日期。 */
     fun localDateKey(
         timestampMs: Long,
         zone: ZoneId = ZoneId.systemDefault(),

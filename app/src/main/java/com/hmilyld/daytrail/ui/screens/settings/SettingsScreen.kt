@@ -20,6 +20,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowForwardIos
 import androidx.compose.material.icons.outlined.BatterySaver
+import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Info
@@ -27,6 +28,7 @@ import androidx.compose.material.icons.outlined.IosShare
 import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.outlined.MyLocation
 import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.Place
 import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material.icons.outlined.SettingsBrightness
 import androidx.compose.material.icons.outlined.Storage
@@ -91,6 +93,7 @@ import kotlinx.coroutines.launch
 fun SettingsScreen(
     container: AppContainer,
     onOpenPermissions: () -> Unit,
+    onOpenPlaces: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val viewModel: SettingsViewModel = viewModel(factory = appViewModelFactory(container))
@@ -146,9 +149,11 @@ fun SettingsScreen(
         state = state,
         onTierChange = viewModel::setSamplingTier,
         onLearningChange = viewModel::setLearningEnabled,
+        onAutoSleepChange = viewModel::setAutoSleep,
         onThemeChange = viewModel::setThemeMode,
         onClearAll = viewModel::clearAllData,
         onOpenPermissions = onOpenPermissions,
+        onOpenPlaces = onOpenPlaces,
         onOpenLocationSettings = { Permissions.openAppSettings(context) },
         onOpenNotificationSettings = { Permissions.openNotificationSettings(context) },
         onOpenBatterySettings = { Permissions.requestIgnoreBatteryOptimizations(context) },
@@ -256,9 +261,11 @@ private fun SettingsContent(
     state: SettingsUiState,
     onTierChange: (SamplingTier) -> Unit,
     onLearningChange: (Boolean) -> Unit,
+    onAutoSleepChange: (Boolean) -> Unit,
     onThemeChange: (ThemeMode) -> Unit,
     onClearAll: () -> Unit,
     onOpenPermissions: () -> Unit,
+    onOpenPlaces: () -> Unit,
     onOpenLocationSettings: () -> Unit,
     onOpenNotificationSettings: () -> Unit,
     onOpenBatterySettings: () -> Unit,
@@ -314,6 +321,19 @@ private fun SettingsContent(
                             subtitle = stringResource(R.string.settings_learning_desc),
                             checked = state.learningEnabled,
                             onCheckedChange = onLearningChange,
+                        )
+                        SettingsSwitchRow(
+                            icon = Icons.Outlined.Bedtime,
+                            title = stringResource(R.string.settings_auto_sleep),
+                            subtitle = stringResource(R.string.settings_auto_sleep_desc),
+                            checked = state.autoSleep,
+                            onCheckedChange = onAutoSleepChange,
+                        )
+                        SettingsNavRow(
+                            icon = Icons.Outlined.Place,
+                            title = stringResource(R.string.settings_places),
+                            subtitle = stringResource(R.string.settings_places_desc),
+                            onClick = onOpenPlaces,
                         )
                     }
 
@@ -653,9 +673,11 @@ private fun SettingsLightPreview() {
             state = SettingsUiState(pointCount = 1234),
             onTierChange = {},
             onLearningChange = {},
+            onAutoSleepChange = {},
             onThemeChange = {},
             onClearAll = {},
             onOpenPermissions = {},
+            onOpenPlaces = {},
             onOpenLocationSettings = {},
             onOpenNotificationSettings = {},
             onOpenBatterySettings = {},
@@ -677,9 +699,11 @@ private fun SettingsDarkPreview() {
                 ),
             onTierChange = {},
             onLearningChange = {},
+            onAutoSleepChange = {},
             onThemeChange = {},
             onClearAll = {},
             onOpenPermissions = {},
+            onOpenPlaces = {},
             onOpenLocationSettings = {},
             onOpenNotificationSettings = {},
             onOpenBatterySettings = {},

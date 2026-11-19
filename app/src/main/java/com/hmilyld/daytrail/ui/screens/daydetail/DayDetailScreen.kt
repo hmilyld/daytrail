@@ -3,9 +3,11 @@ package com.hmilyld.daytrail.ui.screens.daydetail
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -18,14 +20,18 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Route
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -77,6 +83,8 @@ fun DayDetailScreen(
     DayDetailContent(
         state = state,
         onBack = onBack,
+        onCorrectRoute = viewModel::correctRoute,
+        onRestoreRoute = viewModel::restoreRoute,
         modifier = modifier,
     )
 }
@@ -86,6 +94,8 @@ fun DayDetailScreen(
 private fun DayDetailContent(
     state: DayDetailUiState,
     onBack: () -> Unit,
+    onCorrectRoute: () -> Unit = {},
+    onRestoreRoute: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val mapAvailable = rememberAmapAvailable()
@@ -135,58 +145,248 @@ private fun DayDetailContent(
             )
         },
     ) { innerPadding ->
-        Column(
+        BoxWithConstraints(
             modifier =
                 Modifier
                     .fillMaxSize()
                     .padding(innerPadding),
         ) {
-            Box(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .height(MAP_HEIGHT),
-            ) {
-                if (mapAvailable) {
-                    AmapView(
-                        modifier = Modifier.fillMaxSize(),
-                        onMapCreated = { map -> amap = map },
-                    )
-                    TrackOverlay(
+            // 日详情的主角是「今天走了哪」，地图必须占到一半以上。
+            // 早期写死 260dp，地图只占屏幕三分之一，时间轴挤在一起，两头都不好用。
+            val wideLayout = maxWidth >= WIDE_BREAKPOINT
+
+            if (wideLayout) {
+                Row(modifier = Modifier.fillMaxSize()) {
+                    TrackMapPane(
+                        state = state,
                         amap = amap,
-                        segments = state.trackSegments,
-                        stays = state.stayMarkers,
+                        onAmapReady = { map -> amap = map },
                         polylineColor = polylineColor,
-                        // 单日详情：按日期缩一次，看全整条轨迹
-                        fitKey = state.dateKey,
-                        // 画出每个采样点，让「每隔几分钟一个点」一眼可见
-                        sampleDots = true,
-                    )
-                    // 文字版行程：地图对读屏不可用，必须提供等价信息
-                    MapAccessibilitySummary(
-                        text = state.accessibilitySummary,
+                        mapAvailable = mapAvailable,
                         modifier =
                             Modifier
-                                .align(Alignment.BottomStart)
-                                .padding(12.dp),
+                                .weight(MAP_WEIGHT)
+                                .fillMaxHeight(),
                     )
-                } else {
-                    MapUnavailablePlaceholder(modifier = Modifier.fillMaxSize())
+                    VerticalDivider()
+                    TimelinePane(
+                        state = state,
+                        onCorrectRoute = onCorrectRoute,
+                        onRestoreRoute = onRestoreRoute,
+                        modifier =
+                            Modifier
+                                .weight(1f - MAP_WEIGHT)
+                                .fillMaxHeight(),
+                    )
+                }
+            } else {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    TrackMapPane(
+                        state = state,
+                        amap = amap,
+                        onAmapReady = { map -> amap = map },
+                        polylineColor = polylineColor,
+                        mapAvailable = mapAvailable,
+                        modifier =
+                            Modifier
+                                .weight(MAP_WEIGHT)
+                                .fillMaxWidth(),
+                    )
+                    TimelinePane(
+                        state = state,
+                        onCorrectRoute = onCorrectRoute,
+                        onRestoreRoute = onRestoreRoute,
+                        modifier =
+                            Modifier
+                                .weight(1f - MAP_WEIGHT)
+                                .fillMaxWidth(),
+                    )
                 }
             }
+        }
+    }
+}
 
-            if (state.entries.isEmpty() && !state.loading) {
-                EmptyState(
-                    icon = Icons.Outlined.Route,
-                    title = stringResource(R.string.day_detail_empty),
-                    body = stringResource(R.string.history_empty_body),
-                    modifier = Modifier.fillMaxSize(),
-                )
-            } else {
-                LazyColumn(contentPadding = PaddingValues(20.dp)) {
-                    items(items = state.entries) { entry ->
-                        TimelineRow(entry = entry)
+/**
+ * 地图区。整页的主角：轨迹、停留点、文字版行程都在这里。
+ */
+@Composable
+private fun TrackMapPane(
+    state: DayDetailUiState,
+    amap: AMap?,
+    onAmapReady: (AMap) -> Unit,
+    polylineColor: Int,
+    mapAvailable: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Box(modifier = modifier) {
+        if (mapAvailable) {
+            AmapView(
+                modifier = Modifier.fillMaxSize(),
+                onMapCreated = onAmapReady,
+            )
+            TrackOverlay(
+                amap = amap,
+                segments = state.trackSegments,
+                stays = state.stayMarkers,
+                polylineColor = polylineColor,
+                // 单日详情：按日期缩一次，看全整条轨迹
+                fitKey = state.dateKey,
+                // 画出每个采样点，让「每隔几分钟一个点」一眼可见。
+                // 纠偏后的折线是**路网顶点**，不是采样点，画出来会误导。
+                sampleDots = state.routeOverride == null,
+            )
+            // 文字版行程：地图对读屏不可用，必须提供等价信息
+            MapAccessibilitySummary(
+                text = state.accessibilitySummary,
+                modifier =
+                    Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(12.dp),
+            )
+        } else {
+            MapUnavailablePlaceholder(modifier = Modifier.fillMaxSize())
+        }
+    }
+}
+
+/**
+ * 时间轴区。
+ *
+ * 独立成一个 Surface：窄屏时它在地图下方，宽屏时在右侧，
+ * 有自己的底色才能在两种布局里都和地图分开。
+ */
+@Composable
+private fun TimelinePane(
+    state: DayDetailUiState,
+    onCorrectRoute: () -> Unit,
+    onRestoreRoute: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        modifier = modifier,
+    ) {
+        if (state.entries.isEmpty() && !state.loading) {
+            EmptyState(
+                icon = Icons.Outlined.Route,
+                title = stringResource(R.string.day_detail_empty),
+                body = stringResource(R.string.history_empty_body),
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            LazyColumn(
+                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
+            ) {
+                if (state.hasTrack) {
+                    item {
+                        CorrectionBar(
+                            state = state,
+                            onCorrect = onCorrectRoute,
+                            onRestore = onRestoreRoute,
+                        )
                     }
+                }
+                items(items = state.entries) { entry ->
+                    TimelineRow(entry = entry)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 「补全路线」入口。
+ *
+ * 只在用户点的时候联网一次；结果存成派生数据，之后每次打开都直接用，不会重复请求。
+ * 按钮不可用（没配 Key、没有驾车段）时整行不显示，避免给一个点不动的按钮。
+ */
+@Composable
+private fun CorrectionBar(
+    state: DayDetailUiState,
+    onCorrect: () -> Unit,
+    onRestore: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (!state.canCorrectRoute && state.routeOverride == null && !state.correctingRoute) return
+
+    when {
+        state.correctingRoute -> {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = modifier.padding(bottom = 12.dp),
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    strokeWidth = 2.dp,
+                )
+                Text(
+                    text = stringResource(R.string.day_detail_correcting),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+
+        state.routeOverride != null -> {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = modifier.padding(bottom = 12.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Route,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Text(
+                    text = stringResource(R.string.day_detail_route_done),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier =
+                        Modifier
+                            .weight(1f)
+                            .padding(start = 8.dp),
+                )
+                TextButton(onClick = onRestore) {
+                    Text(stringResource(R.string.day_detail_route_restore))
+                }
+            }
+        }
+
+        else -> {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = modifier.padding(bottom = 12.dp),
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.day_detail_correct_route),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Text(
+                        text =
+                            state.routeError
+                                ?: stringResource(R.string.day_detail_correct_route_hint),
+                        style = MaterialTheme.typography.labelSmall,
+                        color =
+                            if (state.routeError != null) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                    )
+                }
+                TextButton(onClick = onCorrect) {
+                    Text(
+                        stringResource(
+                            if (state.routeError != null) {
+                                R.string.day_detail_route_retry
+                            } else {
+                                R.string.day_detail_correct_route
+                            },
+                        ),
+                    )
                 }
             }
         }
@@ -273,8 +473,14 @@ private fun TimelineRow(entry: TimelineEntry) {
     }
 }
 
-/** 地图区域高度。固定值保证时间轴有足够空间，避免地图吃掉整屏。 */
-private val MAP_HEIGHT = 260.dp
+/**
+ * 地图在页面里的占比。地图是这一页的主角（用户来这就是为了看走了哪），
+ * 时间轴排在它下面；60% 在手机上大约是一屏的三分之二。
+ */
+private const val MAP_WEIGHT = 0.6f
+
+/** 600dp 以上改成左右分栏：宽屏上下堆叠会把地图压成一条横带。 */
+private val WIDE_BREAKPOINT = 600.dp
 
 @Preview(showBackground = true, name = "单日详情")
 @Composable

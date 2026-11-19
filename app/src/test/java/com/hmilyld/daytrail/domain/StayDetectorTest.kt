@@ -98,4 +98,52 @@ class StayDetectorTest {
         assertEquals(2, stays.size)
         assertTrue(stays[0].endMs < stays[1].startMs)
     }
+
+    @Test
+    fun `single outlier does not split a long stay`() {
+        // 20 分钟停留，第 10 分钟有一个 150m 的漂移点。
+        // 旧实现遇到它就收尾，一段停留会被切成两段。
+        val points =
+            (0..19).map { minute ->
+                val drift = if (minute == 10) 150.0 else 0.0
+                point(metersNorth = drift, minutesLater = minute.toLong())
+            }
+
+        val stays = detector.detect(points)
+
+        assertEquals(1, stays.size)
+        assertEquals(1_000_000L + 19 * 60_000L, stays.first().endMs)
+    }
+
+    @Test
+    fun `two consecutive outliers end the stay at the last inside point`() {
+        val points =
+            (0..9).map { point(metersNorth = 0.0, minutesLater = it.toLong()) } +
+                (10..11).map { point(metersNorth = 150.0, minutesLater = it.toLong()) } +
+                (12..14).map { point(metersNorth = 0.0, minutesLater = it.toLong()) }
+
+        val stays = detector.detect(points)
+
+        assertEquals(1, stays.size)
+        // 结束时间是最后一个圈内点，不是确认离开的那个点
+        assertEquals(1_000_000L + 9 * 60_000L, stays.first().endMs)
+    }
+
+    @Test
+    fun `outlier is excluded from the centroid`() {
+        val points =
+            listOf(
+                point(0.0, 0),
+                point(0.0, 3),
+                point(0.0, 6),
+                point(150.0, 9), // 单个漂移点，跨过它继续
+                point(0.0, 12),
+            )
+
+        val stays = detector.detect(points)
+
+        assertEquals(1, stays.size)
+        // 质心应贴近 0 米那四个点，不被 150m 的点拉走
+        assertTrue(stays.first().point.latitude < base.latitude + 10.0 / 111_320.0)
+    }
 }

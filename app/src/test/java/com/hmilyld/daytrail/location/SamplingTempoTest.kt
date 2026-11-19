@@ -130,4 +130,100 @@ class SamplingTempoTest {
 
         assertEquals(TempoTier.MOVING, tempo.tier)
     }
+
+    /** 原地不动地喂样本，每 10 分钟一个点。 */
+    private fun stayStill(
+        fromMinute: Int,
+        toMinute: Int,
+        insideKnownPlace: Boolean = false,
+    ): Int {
+        var previous = sample(0.0, fromMinute * 60L)
+        var minute = fromMinute
+        while (minute < toMinute) {
+            minute += 10
+            val next = sample(0.0, minute * 60L)
+            tempo.observe(previous, next, insideKnownPlace)
+            previous = next
+        }
+        return minute
+    }
+
+    @Test
+    fun `staying still for an hour enters sleep`() {
+        stayStill(fromMinute = 0, toMinute = 70)
+
+        assertEquals(TempoTier.SLEEP, tempo.tier)
+        assertEquals(SamplingTempo.SLEEP_INTERVAL_MS, tempo.intervalMs)
+    }
+
+    @Test
+    fun `inside a known place sleep starts after fifteen minutes`() {
+        stayStill(fromMinute = 0, toMinute = 20, insideKnownPlace = true)
+
+        assertEquals(TempoTier.SLEEP, tempo.tier)
+    }
+
+    @Test
+    fun `movement resets the still timer`() {
+        val minute = stayStill(fromMinute = 0, toMinute = 50)
+        assertEquals(TempoTier.STILL, tempo.tier)
+
+        // 10 分钟走 600 米 = 1 m/s，属于移动
+        tempo.observe(sample(0.0, minute * 60L), sample(600.0, (minute + 10) * 60L))
+        assertEquals(TempoTier.MOVING, tempo.tier)
+
+        // 再静止 20 分钟不该休眠：计时已经清零
+        var previous = sample(600.0, (minute + 10) * 60L)
+        for (next in minute + 20..minute + 30 step 10) {
+            val point = sample(600.0, next * 60L)
+            tempo.observe(previous, point)
+            previous = point
+        }
+
+        assertEquals(TempoTier.STILL, tempo.tier)
+    }
+
+    @Test
+    fun `wake leaves sleep immediately`() {
+        stayStill(fromMinute = 0, toMinute = 70)
+        assertEquals(TempoTier.SLEEP, tempo.tier)
+
+        tempo.wake()
+
+        assertEquals(TempoTier.MOVING, tempo.tier)
+        assertEquals(SamplingPreset.POWER_SAVER.profile.movingMs, tempo.intervalMs)
+    }
+
+    @Test
+    fun `auto sleep off never enters sleep`() {
+        tempo.autoSleepEnabled = false
+
+        stayStill(fromMinute = 0, toMinute = 120)
+
+        assertEquals(TempoTier.STILL, tempo.tier)
+    }
+
+    @Test
+    fun `a duplicate delivery does not reset the still timer`() {
+        // 静止 50 分钟
+        stayStill(fromMinute = 0, toMinute = 50)
+        assertEquals(TempoTier.STILL, tempo.tier)
+
+        // 同一轮采样的重复投递：4 秒、45 米（实测数据里出现过）。
+        // 用它算速度会得到 11 m/s，把静止档打成驾车档并清空静止计时。
+        tempo.observe(sample(0.0, 3_000), sample(45.0, 3_004))
+        assertEquals(TempoTier.STILL, tempo.tier)
+
+        // 再静止 10 分钟，累计满 60 分钟应该进休眠
+        tempo.observe(sample(45.0, 3_004), sample(45.0, 3_600))
+        assertEquals(TempoTier.SLEEP, tempo.tier)
+    }
+
+    @Test
+    fun `a normal interval still updates the tier`() {
+        // 30 秒是最高精度档的驾车间隔，不能被最短窗口挡掉
+        tempo.observe(sample(0.0, 0), sample(300.0, 30))
+
+        assertEquals(TempoTier.DRIVING, tempo.tier)
+    }
 }

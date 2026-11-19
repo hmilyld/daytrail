@@ -129,3 +129,57 @@ data class DayGapEntity(
     val endMs: Long,
     val reason: String,
 )
+
+/**
+ * 地点。由多天的停留聚类而来，是「家」「公司」这类地方的稳定坐标。
+ *
+ * 为什么需要它：停留质心每天都会差十几米，直接用当天质心的话，
+ * 地图上的「家」每天都在挪位置，命名也无法复用。
+ *
+ * `suppressed` 用于「删除」：行还留着参与匹配，只是不再显示。
+ * 直接删行的话，下一次重算会立刻把同一个地点重新建出来。
+ */
+@Entity(tableName = "place")
+data class PlaceEntity(
+    @PrimaryKey(autoGenerate = true)
+    val id: Long = 0L,
+    val latitude: Double,
+    val longitude: Double,
+    /** 归属半径。落在圈内的停留都算同一个地点。 */
+    @ColumnInfo(name = "radius_m")
+    val radiusMeters: Double = 120.0,
+    /** 用户起的名字。未命名为 null。 */
+    val label: String? = null,
+    @ColumnInfo(name = "label_source")
+    val labelSource: String = LabelSource.UNNAMED,
+    @ColumnInfo(name = "first_seen_ms")
+    val firstSeenMs: Long,
+    @ColumnInfo(name = "last_seen_ms")
+    val lastSeenMs: Long,
+    /** 用户删除过的地点。保留参与匹配，避免被重算重新创建。 */
+    val suppressed: Boolean = false,
+)
+
+/**
+ * 纠偏后的路线（派生数据，不参与统计）。
+ *
+ * 只存「用户点了补全路线」之后的结果。原始点一个都不改，
+ * `track_day.distance` 也不动——纠偏返回的是路网里程，通常比原始折线长，
+ * 混进统计会让历史口径不一致。
+ */
+@Entity(tableName = "route_override")
+data class RouteOverrideEntity(
+    @PrimaryKey
+    @ColumnInfo(name = "day_key")
+    val dayKey: String,
+    @ColumnInfo(name = "start_ts")
+    val startMs: Long,
+    @ColumnInfo(name = "end_ts")
+    val endMs: Long,
+    /** 折线坐标，JSON 数组 `[[lon,lat],...]`。 */
+    val points: String,
+    @ColumnInfo(name = "distance_m")
+    val distanceMeters: Double,
+    @ColumnInfo(name = "created_at")
+    val createdAtMs: Long,
+)

@@ -1,11 +1,15 @@
 package com.hmilyld.daytrail.data.db.dao
 
+import androidx.room.ColumnInfo
 import androidx.room.Dao
+import androidx.room.Embedded
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Upsert
 import com.hmilyld.daytrail.data.db.entity.DayGapEntity
+import com.hmilyld.daytrail.data.db.entity.PlaceEntity
+import com.hmilyld.daytrail.data.db.entity.RouteOverrideEntity
 import com.hmilyld.daytrail.data.db.entity.StaySegmentEntity
 import com.hmilyld.daytrail.data.db.entity.TrackDayEntity
 import com.hmilyld.daytrail.data.db.entity.TrackPointEntity
@@ -93,6 +97,10 @@ interface TrackDayDao {
     @Query("SELECT * FROM track_day WHERE point_count > 0 ORDER BY date_key DESC")
     fun observeAllWithData(): Flow<List<TrackDayEntity>>
 
+    /** 有记录的日期键，升序。地点回填用。 */
+    @Query("SELECT date_key FROM track_day WHERE point_count > 0 ORDER BY date_key ASC")
+    suspend fun keysWithData(): List<String>
+
     @Query("DELETE FROM track_day WHERE date_key = :dateKey")
     suspend fun deleteDay(dateKey: String)
 
@@ -134,5 +142,79 @@ interface DayGapDao {
     suspend fun deleteDay(dayKey: String)
 
     @Query("DELETE FROM day_gap")
+    suspend fun deleteAll()
+}
+
+/** 地点 + 去过的天数。地点页列表用。 */
+data class PlaceSummary(
+    @Embedded val place: PlaceEntity,
+    @ColumnInfo(name = "visit_days") val visitDays: Int,
+)
+
+@Dao
+interface PlaceDao {
+    @Insert
+    suspend fun insert(place: PlaceEntity): Long
+
+    /** 全部地点，**包含**被删除的：它们还要参与匹配，否则会被重算重新创建。 */
+    @Query("SELECT * FROM place")
+    suspend fun all(): List<PlaceEntity>
+
+    /** 地点页列表。按去过的天数倒序，家/公司自然排在最前。 */
+    @Query(
+        "SELECT p.*, (SELECT COUNT(DISTINCT s.day_key) FROM stay_segment s " +
+            "WHERE s.place_id = p.id) AS visit_days " +
+            "FROM place p WHERE p.suppressed = 0 " +
+            "ORDER BY visit_days DESC, p.last_seen_ms DESC",
+    )
+    fun observeSummaries(): Flow<List<PlaceSummary>>
+
+    /** 单个地点的详情。地图页用。 */
+    @Query(
+        "SELECT p.*, (SELECT COUNT(DISTINCT s.day_key) FROM stay_segment s " +
+            "WHERE s.place_id = p.id) AS visit_days " +
+            "FROM place p WHERE p.id = :id",
+    )
+    fun observeSummary(id: Long): Flow<PlaceSummary?>
+
+    @Query("UPDATE place SET label = :label, label_source = :source WHERE id = :id")
+    suspend fun rename(
+        id: Long,
+        label: String,
+        source: String,
+    )
+
+    /** 「删除」只是隐藏：行留着参与匹配，见 [PlaceEntity.suppressed]。 */
+    @Query("UPDATE place SET suppressed = 1 WHERE id = :id")
+    suspend fun suppress(id: Long)
+
+    @Query("UPDATE place SET last_seen_ms = :lastSeenMs WHERE id = :id")
+    suspend fun touch(
+        id: Long,
+        lastSeenMs: Long,
+    )
+
+    @Query("SELECT COUNT(*) FROM place")
+    suspend fun count(): Int
+
+    @Query("DELETE FROM place")
+    suspend fun deleteAll()
+}
+
+@Dao
+interface RouteOverrideDao {
+    @Upsert
+    suspend fun upsert(route: RouteOverrideEntity)
+
+    @Query("SELECT * FROM route_override WHERE day_key = :dayKey")
+    suspend fun ofDay(dayKey: String): RouteOverrideEntity?
+
+    @Query("SELECT * FROM route_override WHERE day_key = :dayKey")
+    fun observeOfDay(dayKey: String): Flow<RouteOverrideEntity?>
+
+    @Query("DELETE FROM route_override WHERE day_key = :dayKey")
+    suspend fun deleteDay(dayKey: String)
+
+    @Query("DELETE FROM route_override")
     suspend fun deleteAll()
 }

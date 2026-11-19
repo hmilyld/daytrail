@@ -67,6 +67,24 @@ class SettingsStore(
     val learningEnabled: Flow<Boolean> =
         context.dataStore.data.map { prefs -> prefs[KEY_LEARNING_ENABLED] ?: true }
 
+    /**
+     * 长时间静止时自动降到 1 小时一次采样。
+     *
+     * 默认开启：夜里不动的时候按 10 分钟采一晚上没有任何信息量。
+     * 关掉之后采样间隔只由速度决定，回到旧行为。
+     */
+    val autoSleep: Flow<Boolean> =
+        context.dataStore.data.map { prefs -> prefs[KEY_AUTO_SLEEP] ?: true }
+
+    /**
+     * 历史停留的地点归属是否已经回填过。
+     *
+     * 用持久标志而不是「地点表是否为空」：一个从来没有 8 分钟停留的用户
+     * 地点表永远是空的，每次启动都会把所有日期重算一遍。
+     */
+    val placesBackfillDone: Flow<Boolean> =
+        context.dataStore.data.map { prefs -> prefs[KEY_PLACES_BACKFILL] ?: false }
+
     val onboardingCompleted: Flow<Boolean> =
         context.dataStore.data.map { prefs -> prefs[KEY_ONBOARDING_COMPLETED] ?: false }
 
@@ -84,6 +102,14 @@ class SettingsStore(
         context.dataStore.edit { prefs -> prefs[KEY_LEARNING_ENABLED] = enabled }
     }
 
+    suspend fun setAutoSleep(enabled: Boolean) {
+        context.dataStore.edit { prefs -> prefs[KEY_AUTO_SLEEP] = enabled }
+    }
+
+    suspend fun setPlacesBackfillDone() {
+        context.dataStore.edit { prefs -> prefs[KEY_PLACES_BACKFILL] = true }
+    }
+
     suspend fun setOnboardingCompleted(completed: Boolean) {
         context.dataStore.edit { prefs -> prefs[KEY_ONBOARDING_COMPLETED] = completed }
     }
@@ -95,6 +121,8 @@ class SettingsStore(
     private companion object {
         val KEY_SAMPLING_TIER = intPreferencesKey("sampling_tier")
         val KEY_LEARNING_ENABLED = booleanPreferencesKey("learning_enabled")
+        val KEY_AUTO_SLEEP = booleanPreferencesKey("auto_sleep")
+        val KEY_PLACES_BACKFILL = booleanPreferencesKey("places_backfill_done")
         val KEY_ONBOARDING_COMPLETED = booleanPreferencesKey("onboarding_completed")
         val KEY_THEME_MODE = intPreferencesKey("theme_mode")
     }

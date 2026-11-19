@@ -8,6 +8,7 @@ import com.hmilyld.daytrail.data.repo.LocalTrackRepository
 import com.hmilyld.daytrail.data.repo.NoOpSyncGateway
 import com.hmilyld.daytrail.data.repo.SyncGateway
 import com.hmilyld.daytrail.data.repo.TrackRepository
+import com.hmilyld.daytrail.data.route.GrasproadClient
 import com.hmilyld.daytrail.location.RecordingStateHolder
 
 /**
@@ -33,6 +34,9 @@ class AppContainer(
 
     /** 云端接缝 ②：当前为空实现，二期替换即可。 */
     val syncGateway: SyncGateway = NoOpSyncGateway()
+
+    /** 轨迹纠偏客户端。只在用户点「补全路线」时发请求。 */
+    val grasproadClient: GrasproadClient by lazy { GrasproadClient() }
 
     /** 数据导出。用 SAF 让用户选择保存位置，不需要存储权限。 */
     val exportManager: ExportManager by lazy { ExportManager(appContext, trackRepository) }

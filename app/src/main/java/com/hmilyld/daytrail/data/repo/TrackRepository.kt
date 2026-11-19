@@ -1,10 +1,13 @@
 package com.hmilyld.daytrail.data.repo
 
 import com.hmilyld.daytrail.core.DayKey
+import com.hmilyld.daytrail.core.GeoPoint
+import com.hmilyld.daytrail.data.db.dao.PlaceSummary
 import com.hmilyld.daytrail.data.db.entity.DayGapEntity
 import com.hmilyld.daytrail.data.db.entity.StaySegmentEntity
 import com.hmilyld.daytrail.data.db.entity.TrackDayEntity
 import com.hmilyld.daytrail.data.db.entity.TrackPointEntity
+import com.hmilyld.daytrail.domain.RouteOverride
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -66,6 +69,64 @@ interface TrackRepository {
 
     /** 全局最后一个点，跨天接续用。 */
     suspend fun lastPoint(): TrackPointEntity?
+
+    // ---- 地点 ----
+
+    /**
+     * 地点列表（含去过的天数），按天数倒序。
+     *
+     * 地点是**派生物**：由 [`recomputeDay`] 把每天的停留聚到最近的已有地点，
+     * 没有匹配的就新建一个。锚点一旦确定就不再漂移，这样「家」在地图上
+     * 每天都是同一个坐标。
+     */
+    fun observePlaces(): Flow<List<PlaceSummary>>
+
+    /** 给地点改名。写入后所有引用这个地点的停留一起显示新名字。 */
+    suspend fun renamePlace(
+        id: Long,
+        label: String,
+    )
+
+    /** 删除地点。只隐藏，保留行继续参与匹配，避免被下一次重算重新创建。 */
+    suspend fun suppressPlace(id: Long)
+
+    /** 单个地点的详情（含去过天数）。 */
+    fun observePlace(id: Long): Flow<PlaceSummary?>
+
+    /**
+     * 手动新增地点。
+     *
+     * 和自动聚出来的地点一样参与停留归并：以后在附近停留会自动挂到它下面。
+     * 手动地点没有「去过」记录，`visitDays` 从 0 开始。
+     */
+    suspend fun addPlace(
+        point: GeoPoint,
+        label: String,
+    ): Long
+
+    /**
+     * 老数据回填：数据库还是一个地点都没有、但已经有多天停留时，
+     * 把已有日期重算一遍，补上地点归属。
+     *
+     * 为什么需要它：升级前录的停留 `place_id` 是空的，而 [recomputeDay]
+     * 只在新数据写入时触发，不补的话地点页会一直空着。
+     * 幂等，已经有地点时立刻返回。
+     */
+    suspend fun backfillPlaces()
+
+    // ---- 纠偏 ----
+
+    /** 纠偏后的路线。没有就是 null。 */
+    fun observeRoute(dayKey: DayKey): Flow<RouteOverride?>
+
+    /** 保存纠偏结果。不覆盖原始点，也不改里程。 */
+    suspend fun saveRoute(
+        dayKey: DayKey,
+        route: RouteOverride,
+    )
+
+    /** 清除纠偏结果，回到原始折线。 */
+    suspend fun clearRoute(dayKey: DayKey)
 
     // ---- 维护 ----
 

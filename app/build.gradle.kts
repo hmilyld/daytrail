@@ -44,6 +44,11 @@ android {
         versionName = providers.gradleProperty("app.versionName").get()
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
+
+        // 轨迹纠偏走 Web 服务 API，用的是「Web 服务」类型的 Key，
+        // 和地图 SDK 的 Android Key 不是一回事。缺失时为空串，
+        // 界面会把「补全路线」按钮禁用。
+        buildConfigField("String", "AMAP_WEB_KEY", "\"${amapKey("AMAP_WEB_KEY")}\"")
     }
 
     signingConfigs {

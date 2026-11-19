@@ -1,6 +1,7 @@
 package com.hmilyld.daytrail.domain
 
 import com.hmilyld.daytrail.core.GeoPoint
+import com.hmilyld.daytrail.core.distanceMeters
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -64,5 +65,55 @@ class TrackDisplayTest {
     @Test
     fun `empty input produces no segments`() {
         assertEquals(emptyList<List<GeoPoint>>(), TrackDisplay.segments(emptyList()))
+    }
+
+    @Test
+    fun `stay window collapses to a single anchored point`() {
+        // 停留段内三个点相距 10m：画出来就是一小团来回的线
+        val points =
+            listOf(
+                sample(0.0, 0, 10f),
+                sample(5.0, 60, 10f),
+                sample(10.0, 120, 10f),
+            )
+        val anchor = GeoPoint(31.2304 + 8.0 / 111_320.0, 121.4737)
+        val stay =
+            StaySegment(
+                startMs = 1_000_000L,
+                endMs = 1_000_000L + 120_000L,
+                point = anchor,
+                radiusMeters = 20.0,
+            )
+
+        val flat = TrackDisplay.segments(points, listOf(stay)).flatten()
+
+        assertEquals(1, flat.size)
+        assertEquals(anchor, flat.first())
+    }
+
+    @Test
+    fun `points after the stay window keep their position`() {
+        val points =
+            listOf(
+                sample(0.0, 0, 10f),
+                sample(5.0, 60, 10f),
+                // 停留结束后已经开出 600 米
+                sample(600.0, 900, 10f),
+            )
+        val anchor = GeoPoint(31.2304 + 8.0 / 111_320.0, 121.4737)
+        val stay =
+            StaySegment(
+                startMs = 1_000_000L,
+                endMs = 1_000_000L + 60_000L,
+                point = anchor,
+                radiusMeters = 20.0,
+            )
+
+        val flat = TrackDisplay.segments(points, listOf(stay)).flatten()
+
+        assertEquals(2, flat.size)
+        assertEquals(anchor, flat.first())
+        // 8m 处的锚点到 600m 处的点，约 592m
+        assertEquals(592.0, distanceMeters(flat.first(), flat.last()), 2.0)
     }
 }

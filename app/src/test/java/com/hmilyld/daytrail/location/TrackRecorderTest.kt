@@ -2,11 +2,13 @@ package com.hmilyld.daytrail.location
 
 import com.hmilyld.daytrail.core.DayKey
 import com.hmilyld.daytrail.core.GeoPoint
+import com.hmilyld.daytrail.data.db.dao.PlaceSummary
 import com.hmilyld.daytrail.data.db.entity.DayGapEntity
 import com.hmilyld.daytrail.data.db.entity.StaySegmentEntity
 import com.hmilyld.daytrail.data.db.entity.TrackDayEntity
 import com.hmilyld.daytrail.data.db.entity.TrackPointEntity
 import com.hmilyld.daytrail.data.repo.TrackRepository
+import com.hmilyld.daytrail.domain.RouteOverride
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -62,6 +64,33 @@ private class FakeTrackRepository : TrackRepository {
     override fun observePointCount(dayKey: DayKey): Flow<Int> = flowOf(0)
 
     override suspend fun lastPoint(): TrackPointEntity? = lastPointEntity
+
+    override fun observePlaces(): Flow<List<PlaceSummary>> = flowOf(emptyList())
+
+    override suspend fun renamePlace(
+        id: Long,
+        label: String,
+    ) = Unit
+
+    override suspend fun suppressPlace(id: Long) = Unit
+
+    override fun observePlace(id: Long): Flow<PlaceSummary?> = flowOf(null)
+
+    override suspend fun addPlace(
+        point: GeoPoint,
+        label: String,
+    ): Long = 0L
+
+    override suspend fun backfillPlaces() = Unit
+
+    override fun observeRoute(dayKey: DayKey): Flow<RouteOverride?> = flowOf(null)
+
+    override suspend fun saveRoute(
+        dayKey: DayKey,
+        route: RouteOverride,
+    ) = Unit
+
+    override suspend fun clearRoute(dayKey: DayKey) = Unit
 
     override suspend fun deleteDay(dayKey: DayKey) = Unit
 
