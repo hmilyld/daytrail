@@ -146,4 +146,32 @@ class StayDetectorTest {
         // 质心应贴近 0 米那四个点，不被 150m 的点拉走
         assertTrue(stays.first().point.latitude < base.latitude + 10.0 / 111_320.0)
     }
+
+    @Test
+    fun `an edge anchor does not split the stay`() {
+        // 首点落在停留区边缘（离质心约 38m）。一个 150m 的漂移点之后，
+        // 紧接着一个离首点 85m、离质心只有 46m 的点——旧实现会把它算成
+        // 连续第二个出圈点，把一段停留切成两段。
+        val points =
+            listOf(
+                point(0.0, 0),
+                point(40.0, 2),
+                point(45.0, 4),
+                point(50.0, 6),
+                point(40.0, 8),
+                point(45.0, 10),
+                point(50.0, 12),
+                point(150.0, 14),
+                point(85.0, 16),
+                point(45.0, 18),
+                point(50.0, 20),
+                point(40.0, 22),
+                point(45.0, 24),
+            )
+
+        val stays = detector.detect(points)
+
+        assertEquals(1, stays.size)
+        assertEquals(1_000_000L + 24 * 60_000L, stays.first().endMs)
+    }
 }
