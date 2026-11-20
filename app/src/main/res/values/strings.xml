@@ -90,6 +90,10 @@
     <string name="places_rename">重命名地点</string>
     <string name="places_never_visited">还没记录到停留</string>
     <string name="places_last_seen">最近 %1$d月%2$d日</string>
+    <string name="places_autoname">补全名称</string>
+    <string name="places_autoname_running">补全中…</string>
+    <string name="places_autoname_done">已补全 %1$d 个地点</string>
+    <string name="places_autoname_failed">没能补全：可能没网，或这些位置查不到名字</string>
 
     <!-- 诊断日志 -->
     <string name="diagnostics_title">诊断日志</string>

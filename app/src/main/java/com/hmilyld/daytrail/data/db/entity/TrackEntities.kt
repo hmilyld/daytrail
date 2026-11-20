@@ -104,6 +104,9 @@ object LabelSource {
     /** 同一位置复用上次的名称。 */
     const val REUSED = "reused"
 
+    /** 高德逆地理编码给的粗略地名。用户改名后会变成 [MANUAL]。 */
+    const val AUTO = "auto"
+
     /** 还没有名称。 */
     const val UNNAMED = "unnamed"
 }

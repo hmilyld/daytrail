@@ -9,6 +9,7 @@ import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hmilyld.daytrail.data.prefs.ThemeMode
 import com.hmilyld.daytrail.ui.DayTrailApp
+import com.hmilyld.daytrail.ui.components.map.MapViewCache
 import com.hmilyld.daytrail.ui.theme.DayTrailTheme
 
 /**
@@ -44,5 +45,21 @@ class MainActivity : ComponentActivity() {
                 DayTrailApp(container = container)
             }
         }
+    }
+
+    /**
+     * 地图共享实例的渲染开关只由这里驱动，见 [MapViewCache] 的注释。
+     *
+     * 不能让页面各自去听 `LocalLifecycleOwner`：Navigation 3 里每个 entry 有自己的
+     * lifecycle，一离开页面就会把别人正在用的地图暂停掉。
+     */
+    override fun onResume() {
+        super.onResume()
+        MapViewCache.onHostResume()
+    }
+
+    override fun onPause() {
+        MapViewCache.onHostPause()
+        super.onPause()
     }
 }

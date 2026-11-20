@@ -42,14 +42,32 @@ object MapViewCache {
     private var holders: Int = 0
 
     /**
+     * 宿主 Activity 是否在前台。
+     *
+     * **为什么不能听每个页面自己的 lifecycle**：Navigation 3 里每个 entry 有自己的
+     * `LifecycleOwner`，而地图是进程内共享的一个实例。以前 `AmapView` 把 entry 的
+     * `ON_PAUSE` 直接映射成全局 `pause()`，于是**离开任意一个页面都会暂停别人正在用的
+     * 地图**；而 `resume()` 在 View 还没挂上窗口时是空操作（真正的恢复靠 `doOnAttach`），
+     * 一旦「新页面 attach + resume」早于「旧 entry 的 ON_PAUSE」，最后落在暂停上，
+     * 实例就停在暂停态——此后每一页都是白屏，直到进程重启。
+     *
+     * 现在只有一个真值来源：Activity 的 onResume/onPause（高德文档要求的用法）。
+     */
+    private var hostResumed: Boolean = false
+
+    /**
      * 取得（或创建）地图视图。
      *
      * 返回的 View 可能仍挂在旧的父容器上，这里先摘下再交给新的 Compose 容器。
      */
     fun obtain(context: Context): TextureMapView {
         cachedView?.let { existing ->
-            (existing.parent as? ViewGroup)?.removeView(existing)
-            Log.d(TAG, "复用已有地图实例")
+            val oldParent = existing.parent as? ViewGroup
+            (oldParent)?.removeView(existing)
+            Log.d(
+                TAG,
+                "复用已有地图实例（原本挂在 ${oldParent?.javaClass?.simpleName ?: "无父容器"}）",
+            )
             return existing
         }
 
@@ -61,31 +79,59 @@ object MapViewCache {
         return view
     }
 
-    /** 页面进入组合：计数 +1，并确保在渲染。 */
+    /** 页面进入组合：计数 +1。 */
     fun acquire() {
         holders++
-        Log.d(TAG, "acquire -> $holders")
-        resume()
+        sync("acquire")
     }
 
-    /** 页面离开组合：计数 -1，只有最后一个离开时才暂停。 */
+    /** 页面离开组合：计数 -1。 */
     fun release() {
         holders = (holders - 1).coerceAtLeast(0)
-        Log.d(TAG, "release -> $holders")
-        if (holders == 0) {
-            pause()
+        sync("release")
+    }
+
+    /** 宿主进入前台。由 `MainActivity.onResume` 驱动。 */
+    fun onHostResume() {
+        hostResumed = true
+        sync("host")
+    }
+
+    /** 宿主退到后台。由 `MainActivity.onPause` 驱动。 */
+    fun onHostPause() {
+        hostResumed = false
+        sync("host")
+    }
+
+    /**
+     * 唯一的开关：**宿主在前台**且**还有页面持有**才渲染。
+     *
+     * 两个条件缺一不可。只看来任何一个都会出错：只看持有数的话，切到后台后地图还在空转；
+     * 只看宿主状态的话，页面已经离开、View 被摘下，`onResume` 也没有意义。
+     */
+    fun sync(reason: String = "direct") {
+        if (hostResumed && holders > 0) {
+            resume(reason)
+        } else {
+            pause(reason)
         }
     }
 
     /** 页面可见时调用。 */
-    fun resume() {
+    private fun resume(reason: String) {
+        Log.d(TAG, "resume($reason) holders=$holders ${stateOf()}")
         runCatching { cachedView?.onResume() }
     }
 
     /** 页面不可见时调用。只暂停渲染，不销毁。 */
-    fun pause() {
+    private fun pause(reason: String) {
+        Log.d(TAG, "pause($reason) holders=$holders ${stateOf()}")
         runCatching { cachedView?.onPause() }
     }
+
+    /** 日志用：把「谁、挂着没挂着」一次性打出来，排查白屏全靠它。 */
+    private fun stateOf(): String =
+        cachedView?.let { "attached=${it.isAttachedToWindow} shown=${it.isShown}" } ?: "no-view"
 
     /**
      * 应用真正退出时销毁。
