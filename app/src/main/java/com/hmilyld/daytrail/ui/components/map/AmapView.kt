@@ -5,11 +5,8 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.doOnAttach
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
 import com.amap.api.maps.AMap
 
 /**
@@ -26,7 +23,11 @@ import com.amap.api.maps.AMap
  * 2. **实例跨页面复用，不在 onDispose 里销毁**
  *    地图创建成本高（GL 上下文、渲染管线、首批瓦片）。如果每次切 Tab 都重建，
  *    会看到明显白屏与瓦片重新下载。这里只做 acquire/release 计数，
- *    最后一个页面离开时才暂停，真正的销毁交给 [MapViewCache.destroy]。
+ *    真正的销毁交给 [MapViewCache.destroy]。
+ *
+ *    **渲染开关只由 `MapViewCache.sync()` 决定**：宿主在前台且还有页面持有时才渲染。
+ *    不要在这里监听 `LocalLifecycleOwner`——Navigation 3 里那是**每个 entry 自己的**
+ *    lifecycle，离开任意一个页面都会暂停这个共享实例，把别人正在看的地图弄成白屏。
  *
  * 3. **在包装层统一关掉 SDK 自带的缩放按钮**
  *    它按屏幕密度绘制，在高 DPI 手机上又大又糊，而且和「双指缩放」重复。
@@ -40,22 +41,11 @@ fun AmapView(
     onMapCreated: (AMap) -> Unit = {},
 ) {
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
 
     // 从缓存取实例：已存在则复用，不重建
     val mapView = remember { MapViewCache.obtain(context) }
 
-    DisposableEffect(mapView, lifecycleOwner) {
-        val observer =
-            LifecycleEventObserver { _, event ->
-                when (event) {
-                    Lifecycle.Event.ON_RESUME -> MapViewCache.resume()
-                    Lifecycle.Event.ON_PAUSE -> MapViewCache.pause()
-                    else -> Unit
-                }
-            }
-        lifecycleOwner.lifecycle.addObserver(observer)
-
+    DisposableEffect(mapView) {
         // 进入页面时占位 +1：转场期间两个页面同时存在，谁都不能把地图暂停掉
         MapViewCache.acquire()
 
@@ -64,9 +54,7 @@ fun AmapView(
         onMapCreated(mapView.map)
 
         onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
             onMapReleased()
-            // 计数归零才暂停：实例留给下次复用
             MapViewCache.release()
         }
     }
@@ -74,10 +62,10 @@ fun AmapView(
     AndroidView(
         factory = {
             mapView.also { view ->
-                // 挂上窗口之后再 resume：DisposableEffect 里的 acquire() 发生在
+                // 挂上窗口之后再同步一次：DisposableEffect 里的 acquire() 发生在
                 // AndroidView 把 View 交给容器之前，此时调用 onResume 是空操作，
                 // 地图会停在暂停状态——表现就是「画着最后一帧，但点击拖动全都没反应」。
-                view.doOnAttach { MapViewCache.resume() }
+                view.doOnAttach { MapViewCache.sync("doOnAttach") }
             }
         },
         modifier = modifier,
