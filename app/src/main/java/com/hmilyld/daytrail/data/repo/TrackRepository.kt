@@ -90,6 +90,13 @@ interface TrackRepository {
     /** 删除地点。只隐藏，保留行继续参与匹配，避免被下一次重算重新创建。 */
     suspend fun suppressPlace(id: Long)
 
+    /**
+     * 用逆地理编码给所有未命名地点补名字，返回补成功的个数。
+     *
+     * 这是**联网**操作，只有用户在列表页点「补全名称」时才会调用。
+     */
+    suspend fun backfillPlaceNames(): Int
+
     /** 单个地点的详情（含去过天数）。 */
     fun observePlace(id: Long): Flow<PlaceSummary?>
 

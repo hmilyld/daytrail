@@ -74,6 +74,8 @@ private class FakeTrackRepository : TrackRepository {
 
     override suspend fun suppressPlace(id: Long) = Unit
 
+    override suspend fun backfillPlaceNames(): Int = 0
+
     override fun observePlace(id: Long): Flow<PlaceSummary?> = flowOf(null)
 
     override suspend fun addPlace(

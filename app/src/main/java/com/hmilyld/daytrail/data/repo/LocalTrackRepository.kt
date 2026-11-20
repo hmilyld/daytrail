@@ -12,6 +12,7 @@ import com.hmilyld.daytrail.data.db.entity.RouteOverrideEntity
 import com.hmilyld.daytrail.data.db.entity.StaySegmentEntity
 import com.hmilyld.daytrail.data.db.entity.TrackDayEntity
 import com.hmilyld.daytrail.data.db.entity.TrackPointEntity
+import com.hmilyld.daytrail.data.geocode.PlaceAutoNamer
 import com.hmilyld.daytrail.domain.DayAggregator
 import com.hmilyld.daytrail.domain.GapDetector
 import com.hmilyld.daytrail.domain.PlaceResolver
@@ -35,6 +36,8 @@ class LocalTrackRepository(
     private val database: DayTrailDatabase,
     private val stayDetector: StayDetector = StayDetector(),
     private val gapDetector: GapDetector = GapDetector(),
+    /** 新建地点时顺手补个名字。为空表示不做逆地理编码（单测里就是空的）。 */
+    private val autoNamer: PlaceAutoNamer? = null,
 ) : TrackRepository {
     private val pointDao = database.trackPointDao()
     private val dayDao = database.trackDayDao()
@@ -258,8 +261,12 @@ class LocalTrackRepository(
             )
         val id = placeDao.insert(created)
         knownPlaces += created.copy(id = id)
+        // 顺手取个名字。fire-and-forget，失败就保持「未命名」，不阻塞重算。
+        autoNamer?.enrich(id, stay.point)
         return id
     }
+
+    override suspend fun backfillPlaceNames(): Int = autoNamer?.backfill() ?: 0
 }
 
 /** 实体到领域模型的转换。集中放这里，避免各处重复写。 */

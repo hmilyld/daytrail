@@ -27,10 +27,15 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -64,9 +69,33 @@ fun PlacesScreen(
 ) {
     val viewModel: PlacesViewModel = viewModel(factory = appViewModelFactory(container))
     val places by viewModel.places.collectAsStateWithLifecycle()
+    val naming by viewModel.naming.collectAsStateWithLifecycle()
+    val outcome by viewModel.outcome.collectAsStateWithLifecycle()
+
+    val unnamedCount = places.count { it.place.label.isNullOrBlank() }
+    val snackbar = remember { SnackbarHostState() }
+
+    // 文案必须在组合期用 stringResource 取：用 LocalContext.getString 拿到的是
+    // 配置变更前的旧值（lint: LocalContextGetResourceValueCall）。
+    val result = outcome
+    val message =
+        when {
+            result == null -> null
+            result.named > 0 -> stringResource(R.string.places_autoname_done, result.named)
+            else -> stringResource(R.string.places_autoname_failed)
+        }
+
+    // 补全结果只展示一次，展示完就清掉，避免旋转屏幕后又弹一遍
+    LaunchedEffect(message) {
+        if (message != null) {
+            snackbar.showSnackbar(message)
+            viewModel.consumeOutcome()
+        }
+    }
 
     Scaffold(
         modifier = modifier,
+        snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.places_title)) },
@@ -76,6 +105,23 @@ fun PlacesScreen(
                             Icon(
                                 imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
                                 contentDescription = stringResource(R.string.action_back),
+                            )
+                        }
+                    }
+                },
+                actions = {
+                    // 只在还有未命名地点时出现：没有可补的就别占位
+                    if (unnamedCount > 0) {
+                        TextButton(onClick = { viewModel.backfillNames() }, enabled = !naming) {
+                            Text(
+                                text =
+                                    stringResource(
+                                        if (naming) {
+                                            R.string.places_autoname_running
+                                        } else {
+                                            R.string.places_autoname
+                                        },
+                                    ),
                             )
                         }
                     }

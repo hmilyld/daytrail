@@ -184,6 +184,26 @@ interface PlaceDao {
         source: String,
     )
 
+    /**
+     * 只在「还没有名字」时写入。
+     *
+     * 逆地理编码是自动触发的，绝不能覆盖用户自己起的名字——把条件写进 SQL 里，
+     * 比先查再改更省事，也不会和用户的改名操作打架。
+     */
+    @Query(
+        "UPDATE place SET label = :label, label_source = :source " +
+            "WHERE id = :id AND (label IS NULL OR label = '')",
+    )
+    suspend fun renameIfUnnamed(
+        id: Long,
+        label: String,
+        source: String,
+    )
+
+    /** 未命名且未被删除的地点，供「补全名称」使用。 */
+    @Query("SELECT * FROM place WHERE suppressed = 0 AND (label IS NULL OR label = '')")
+    suspend fun unnamed(): List<PlaceEntity>
+
     /** 「删除」只是隐藏：行留着参与匹配，见 [PlaceEntity.suppressed]。 */
     @Query("UPDATE place SET suppressed = 1 WHERE id = :id")
     suspend fun suppress(id: Long)

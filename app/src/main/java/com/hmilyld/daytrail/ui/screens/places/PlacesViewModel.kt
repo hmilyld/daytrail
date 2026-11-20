@@ -5,8 +5,10 @@ import androidx.lifecycle.viewModelScope
 import com.hmilyld.daytrail.core.GeoPoint
 import com.hmilyld.daytrail.data.db.dao.PlaceSummary
 import com.hmilyld.daytrail.data.repo.TrackRepository
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -28,6 +30,41 @@ class PlacesViewModel(
                 started = SharingStarted.WhileSubscribed(5_000),
                 initialValue = emptyList(),
             )
+
+    /** 「补全名称」的结果，一次性提示用。 */
+    data class NamingOutcome(
+        val attempted: Int,
+        val named: Int,
+    )
+
+    private val _naming = MutableStateFlow(false)
+
+    /** 是否正在联网补名字。用于禁用按钮、显示「补全中…」。 */
+    val naming: StateFlow<Boolean> = _naming.asStateFlow()
+
+    private val _outcome = MutableStateFlow<NamingOutcome?>(null)
+    val outcome: StateFlow<NamingOutcome?> = _outcome.asStateFlow()
+
+    /**
+     * 给所有未命名地点补名字。
+     *
+     * 这是本应用里第二处**主动联网**（第一处是按需纠偏），所以只由用户点按钮触发，
+     * 不做后台自动补——离线优先的原则不能被悄悄破坏。
+     */
+    fun backfillNames() {
+        if (_naming.value) return
+        viewModelScope.launch {
+            val attempted = places.value.count { it.place.label.isNullOrBlank() }
+            _naming.value = true
+            val named = runCatching { repository.backfillPlaceNames() }.getOrDefault(0)
+            _naming.value = false
+            _outcome.value = NamingOutcome(attempted = attempted, named = named)
+        }
+    }
+
+    fun consumeOutcome() {
+        _outcome.value = null
+    }
 
     fun rename(
         id: Long,

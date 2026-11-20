@@ -4,6 +4,8 @@ import android.content.Context
 import com.hmilyld.daytrail.data.db.DayTrailDatabase
 import com.hmilyld.daytrail.data.diagnostics.DiagnosticLog
 import com.hmilyld.daytrail.data.export.ExportManager
+import com.hmilyld.daytrail.data.geocode.PlaceAutoNamer
+import com.hmilyld.daytrail.data.geocode.ReverseGeocodeClient
 import com.hmilyld.daytrail.data.prefs.SettingsStore
 import com.hmilyld.daytrail.data.repo.LocalTrackRepository
 import com.hmilyld.daytrail.data.repo.NoOpSyncGateway
@@ -33,8 +35,18 @@ class AppContainer(
 
     private val database: DayTrailDatabase by lazy { DayTrailDatabase.create(appContext) }
 
+    /** 逆地理编码：坐标 → 粗略地名。复用纠偏那个 Web 服务 Key。 */
+    val reverseGeocodeClient: ReverseGeocodeClient by lazy { ReverseGeocodeClient() }
+
+    /** 新建地点时顺手补名字（fire-and-forget，失败保持未命名）。 */
+    private val placeAutoNamer: PlaceAutoNamer by lazy {
+        PlaceAutoNamer(reverseGeocodeClient, database.placeDao())
+    }
+
     /** 云端接缝 ①：上层只依赖接口。 */
-    val trackRepository: TrackRepository by lazy { LocalTrackRepository(database) }
+    val trackRepository: TrackRepository by lazy {
+        LocalTrackRepository(database, autoNamer = placeAutoNamer)
+    }
 
     /** 云端接缝 ②：当前为空实现，二期替换即可。 */
     val syncGateway: SyncGateway = NoOpSyncGateway()
