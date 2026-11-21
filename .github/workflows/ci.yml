@@ -35,7 +35,14 @@ jobs:
           SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
           [ -x "$SDKMANAGER" ] || SDKMANAGER="$(command -v sdkmanager)"
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
-          "$SDKMANAGER" "platforms;android-37" "build-tools;37.0.0" "platform-tools"
+          # compileSdk 37 的平台包按次版本发布（android-37.0 / .1 / .2），
+          # 不存在 "platforms;android-37" 这个 id。
+          "$SDKMANAGER" \
+            "platforms;android-37.0" \
+            "platforms;android-37.1" \
+            "platforms;android-37.2" \
+            "build-tools;37.0.0" \
+            "platform-tools"
 
       # 与 scripts/verify.ps1 等价：格式化、Debug 构建与单测、两套 lint、
       # Release 单测（R8 开启后行为是否一致）
