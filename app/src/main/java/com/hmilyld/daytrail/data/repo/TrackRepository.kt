@@ -91,6 +91,19 @@ interface TrackRepository {
     suspend fun suppressPlace(id: Long)
 
     /**
+     * 把 [fromId] 合并进 [toId]：停留改判到目标、目标半径撑大、源行删除。
+     *
+     * 用户在详情页明确选择时才调用。返回是否真的发生了合并（id 相同、行不存在时为 false）。
+     *
+     * 为什么半径必须一起改：`recomputeDay` 按距离重判归属，源行删掉后
+     * 半径不够就会把同样的地点重新建出来，见 `PlaceMerge`。
+     */
+    suspend fun mergePlaces(
+        fromId: Long,
+        toId: Long,
+    ): Boolean
+
+    /**
      * 用逆地理编码给所有未命名地点补名字，返回补成功的个数。
      *
      * 这是**联网**操作，只有用户在列表页点「补全名称」时才会调用。

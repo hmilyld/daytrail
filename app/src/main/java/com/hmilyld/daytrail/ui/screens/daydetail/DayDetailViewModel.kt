@@ -12,9 +12,11 @@ import com.hmilyld.daytrail.data.db.entity.StaySegmentEntity
 import com.hmilyld.daytrail.data.db.entity.TrackDayEntity
 import com.hmilyld.daytrail.data.db.entity.TrackPointEntity
 import com.hmilyld.daytrail.data.repo.TrackRepository
+import com.hmilyld.daytrail.data.repo.toMarkerStay
 import com.hmilyld.daytrail.data.repo.toStaySegment
 import com.hmilyld.daytrail.data.route.GrasproadClient
 import com.hmilyld.daytrail.domain.RouteOverride
+import com.hmilyld.daytrail.domain.StayMarkers
 import com.hmilyld.daytrail.domain.TrackCorrection
 import com.hmilyld.daytrail.domain.TrackDisplay
 import com.hmilyld.daytrail.domain.TrackPointSample
@@ -57,8 +59,10 @@ data class DayDetailUiState(
     val trackSegments: List<List<GeoPoint>> = emptyList(),
     /** 记录时间跨度，如 `13:24 – 14:38`。让用户一眼看到实际起止。 */
     val timeRange: String = "",
-    /** 地图停留标记。 */
+    /** 地图停留标记。每天每个地点一个，画在地点锚点上。 */
     val stayMarkers: List<GeoPoint> = emptyList(),
+    /** 有标记的停留各自的质心。起终点落在这些位置上时不再单独画图钉。 */
+    val stayCentroids: List<GeoPoint> = emptyList(),
     /** 地图的文字版行程，供 TalkBack 使用。 */
     val accessibilitySummary: String = "",
     val loading: Boolean = true,
@@ -308,10 +312,9 @@ class DayDetailViewModel(
                 route,
             )
         val geoPoints = segments.flatten()
-        val markers =
-            stays
-                .filter { it.endMs - it.startMs >= TrackDisplay.MIN_STAY_MARKER_MS }
-                .map { stay -> GeoPoint(stay.latitude, stay.longitude) }
+        // 每天每个地点一个标记：同一天里「出门前在家」「回来后还在家」是两段停留，
+        // 但它们是同一个地点，不该在地图上出现两个点。
+        val stayPlan = StayMarkers.plan(stays.map { it.toMarkerStay(places) })
 
         return DayDetailUiState(
             dateKey = dateKey,
@@ -330,7 +333,8 @@ class DayDetailViewModel(
                 } else {
                     ""
                 },
-            stayMarkers = markers,
+            stayMarkers = stayPlan.markers,
+            stayCentroids = stayPlan.centroids,
             accessibilitySummary = buildAccessibilitySummary(geoPoints, stays, segments.size),
             loading = false,
             canCorrectRoute =

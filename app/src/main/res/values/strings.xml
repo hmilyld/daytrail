@@ -94,6 +94,16 @@
     <string name="places_autoname_running">补全中…</string>
     <string name="places_autoname_done">已补全 %1$d 个地点</string>
     <string name="places_autoname_failed">没能补全：可能没网，或这些位置查不到名字</string>
+    <string name="places_suspect">疑似重复</string>
+    <string name="places_merge">合并到其他地点</string>
+    <string name="places_merge_title">合并到其他地点</string>
+    <string name="places_merge_body">选择要把这个地点并入的目标。两个地点的停留会一起归到目标，当前这条会被删除。</string>
+    <string name="places_merge_hint">疑似同一个地方：%1$s（%2$s）</string>
+    <string name="places_merge_distance">距此 %1$d 米</string>
+    <string name="places_merge_target">%1$s · 距此 %2$d 米</string>
+    <string name="places_merge_confirm_title">合并到「%1$s」？</string>
+    <string name="places_merge_confirm_body">当前地点会被删除，它的停留一起归到「%1$s」。轨迹和历史停留都不受影响。</string>
+    <string name="places_merge_empty">附近没有可以合并的地点</string>
 
     <!-- 诊断日志 -->
     <string name="diagnostics_title">诊断日志</string>

@@ -45,7 +45,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.hmilyld.daytrail.AppContainer
 import com.hmilyld.daytrail.R
+import com.hmilyld.daytrail.core.GeoPoint
 import com.hmilyld.daytrail.data.db.dao.PlaceSummary
+import com.hmilyld.daytrail.domain.PlaceNeighbors
 import com.hmilyld.daytrail.ui.appViewModelFactory
 import com.hmilyld.daytrail.ui.components.EmptyState
 import java.time.Instant
@@ -74,6 +76,21 @@ fun PlacesScreen(
 
     val unnamedCount = places.count { it.place.label.isNullOrBlank() }
     val snackbar = remember { SnackbarHostState() }
+
+    // 相距 400 米内的地点互相标「疑似重复」：同一个小区里两次停车能差两三百米，
+    // 归并半径只有 120 米，于是会建出两个地点。合不合并由用户点进详情决定。
+    val suspects =
+        remember(places) {
+            PlaceNeighbors.suspects(
+                places.map { summary ->
+                    PlaceNeighbors.Entry(
+                        id = summary.place.id,
+                        point = GeoPoint(summary.place.latitude, summary.place.longitude),
+                        radiusMeters = summary.place.radiusMeters,
+                    )
+                },
+            )
+        }
 
     // 文案必须在组合期用 stringResource 取：用 LocalContext.getString 拿到的是
     // 配置变更前的旧值（lint: LocalContextGetResourceValueCall）。
@@ -166,6 +183,7 @@ fun PlacesScreen(
                     items(places, key = { it.place.id }) { summary ->
                         PlaceCard(
                             summary = summary,
+                            suspect = summary.place.id in suspects,
                             onClick = { onOpenPlace(summary.place.id) },
                         )
                     }
@@ -178,6 +196,7 @@ fun PlacesScreen(
 @Composable
 private fun PlaceCard(
     summary: PlaceSummary,
+    suspect: Boolean,
     onClick: () -> Unit,
 ) {
     val zone = ZoneId.systemDefault()
@@ -230,6 +249,14 @@ private fun PlaceCard(
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
+                if (suspect) {
+                    // 只做提示，不自动合并：相距 400 米也可能是两家相邻的店
+                    Text(
+                        text = stringResource(R.string.places_suspect),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.tertiary,
+                    )
+                }
                 Text(
                     text = supporting,
                     style = MaterialTheme.typography.bodySmall,

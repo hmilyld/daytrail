@@ -122,6 +122,18 @@ interface StaySegmentDao {
     @Query("DELETE FROM stay_segment WHERE day_key = :dayKey")
     suspend fun deleteDay(dayKey: String)
 
+    /**
+     * 地点合并：把挂在 [fromId] 下的停留全部改判到 [toId]。
+     *
+     * 不重算天数：`recomputeDay` 每次按距离重新判归属，重算反而会把合并前的判定
+     * 再跑一遍。这里只改指针，配合目标半径扩张（见 `PlaceMerge`）就能稳定下来。
+     */
+    @Query("UPDATE stay_segment SET place_id = :toId WHERE place_id = :fromId")
+    suspend fun reassignPlace(
+        fromId: Long,
+        toId: Long,
+    ): Int
+
     @Query("DELETE FROM stay_segment")
     suspend fun deleteAll()
 }
@@ -213,6 +225,22 @@ interface PlaceDao {
         id: Long,
         lastSeenMs: Long,
     )
+
+    /** 合并后撑大目标地点的归属半径，见 `PlaceMerge`。 */
+    @Query("UPDATE place SET radius_m = :radiusMeters WHERE id = :id")
+    suspend fun updateRadius(
+        id: Long,
+        radiusMeters: Double,
+    )
+
+    /**
+     * 合并后删掉源地点行。
+     *
+     * 与 [suppress] 不同：被隐藏的行还参与匹配，留着会让下一次重算继续把停留
+     * 判给源地点；合并必须真的删掉，靠目标半径把它覆盖住。
+     */
+    @Query("DELETE FROM place WHERE id = :id")
+    suspend fun delete(id: Long)
 
     @Query("SELECT COUNT(*) FROM place")
     suspend fun count(): Int

@@ -41,4 +41,12 @@ class DistanceFormatTest {
     fun `negative distance clamps to zero`() {
         assertEquals("0.0", DistanceFormat.kilometers(-100.0))
     }
+
+    @Test
+    fun `nearby distances round to ten meters`() {
+        assertEquals(260, DistanceFormat.roundedMeters(260.4))
+        assertEquals(160, DistanceFormat.roundedMeters(163.0))
+        assertEquals(330, DistanceFormat.roundedMeters(334.0))
+        assertEquals(0, DistanceFormat.roundedMeters(3.0))
+    }
 }

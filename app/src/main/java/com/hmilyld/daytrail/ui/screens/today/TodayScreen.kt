@@ -192,6 +192,7 @@ private fun TodayContent(
                         amap = amap,
                         segments = state.trackSegments,
                         stays = state.stayMarkers,
+                        stayCentroids = state.stayCentroids,
                         polylineColor = polylineColor,
                         // 录制中不自动缩放（轨迹每分钟更新，会把用户拖动的地图反复拽回）；
                         // 进入全屏时缩一次，让整条轨迹落进更大的画布。

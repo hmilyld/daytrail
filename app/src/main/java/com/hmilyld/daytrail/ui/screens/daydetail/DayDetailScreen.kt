@@ -248,6 +248,7 @@ private fun TrackMapPane(
                 amap = amap,
                 segments = state.trackSegments,
                 stays = state.stayMarkers,
+                stayCentroids = state.stayCentroids,
                 polylineColor = polylineColor,
                 // 按日期缩一次；进入全屏再缩一次看全整条轨迹。
                 fitKey = if (expanded) "${state.dateKey}-full" else state.dateKey,

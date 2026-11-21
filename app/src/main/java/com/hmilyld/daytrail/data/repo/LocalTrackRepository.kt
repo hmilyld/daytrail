@@ -1,8 +1,10 @@
 package com.hmilyld.daytrail.data.repo
 
+import androidx.room.withTransaction
 import com.hmilyld.daytrail.core.DayKey
 import com.hmilyld.daytrail.core.DayKeys
 import com.hmilyld.daytrail.core.GeoPoint
+import com.hmilyld.daytrail.core.distanceMeters
 import com.hmilyld.daytrail.data.db.DayTrailDatabase
 import com.hmilyld.daytrail.data.db.dao.PlaceSummary
 import com.hmilyld.daytrail.data.db.entity.DayGapEntity
@@ -15,9 +17,11 @@ import com.hmilyld.daytrail.data.db.entity.TrackPointEntity
 import com.hmilyld.daytrail.data.geocode.PlaceAutoNamer
 import com.hmilyld.daytrail.domain.DayAggregator
 import com.hmilyld.daytrail.domain.GapDetector
+import com.hmilyld.daytrail.domain.PlaceMerge
 import com.hmilyld.daytrail.domain.PlaceResolver
 import com.hmilyld.daytrail.domain.RouteOverride
 import com.hmilyld.daytrail.domain.StayDetector
+import com.hmilyld.daytrail.domain.StayMarkers
 import com.hmilyld.daytrail.domain.StaySegment
 import com.hmilyld.daytrail.domain.TrackPointSample
 import kotlinx.coroutines.flow.Flow
@@ -161,6 +165,44 @@ class LocalTrackRepository(
         placeDao.suppress(id)
     }
 
+    override suspend fun mergePlaces(
+        fromId: Long,
+        toId: Long,
+    ): Boolean {
+        if (fromId == toId) return false
+
+        // 读和写放在同一个事务里：中途被取消（合并后立刻按返回键）或进程被杀时，
+        // 不能停在「停留已改判、源行还在」这种半完成状态。
+        return database.withTransaction {
+            val all = placeDao.all()
+            val from = all.firstOrNull { it.id == fromId } ?: return@withTransaction false
+            val to = all.firstOrNull { it.id == toId } ?: return@withTransaction false
+
+            val distance = distanceMeters(from.toGeoPoint(), to.toGeoPoint())
+            // 候选列表只给可覆盖的距离，这里再挡一次：超过半径上限的合并注定被下一次
+            // 重算重建出来，宁可不做，也不要把源地点删掉。
+            if (!PlaceMerge.isCoverable(distance)) return@withTransaction false
+
+            // 半径要先撑大：源行删掉之后，重算只能靠这个半径把停留判回目标。
+            placeDao.updateRadius(
+                to.id,
+                PlaceMerge.mergedRadius(
+                    toRadiusMeters = to.radiusMeters,
+                    distanceMeters = distance,
+                    fromRadiusMeters = from.radiusMeters,
+                ),
+            )
+            stayDao.reassignPlace(from.id, to.id)
+            // 用户给源地点起过名字、目标还没名字时，把名字接过来，别让命名白丢
+            if (to.label.isNullOrBlank() && !from.label.isNullOrBlank()) {
+                placeDao.rename(to.id, from.label, from.labelSource)
+            }
+            placeDao.touch(to.id, maxOf(to.lastSeenMs, from.lastSeenMs))
+            placeDao.delete(from.id)
+            true
+        }
+    }
+
     override fun observePlace(id: Long): Flow<PlaceSummary?> = placeDao.observeSummary(id)
 
     override suspend fun addPlace(
@@ -244,7 +286,13 @@ class LocalTrackRepository(
     ): Long {
         val match =
             PlaceResolver.nearest(
-                knownPlaces.map { PlaceResolver.Candidate(it.id, it.toGeoPoint()) },
+                knownPlaces.map {
+                    PlaceResolver.Candidate(
+                        id = it.id,
+                        point = it.toGeoPoint(),
+                        radiusMeters = it.radiusMeters,
+                    )
+                },
                 stay.point,
             )
         if (match != null) {
@@ -315,6 +363,30 @@ internal fun StaySegmentEntity.toStaySegment() =
                 .GeoPoint(latitude = latitude, longitude = longitude),
         radiusMeters = radiusMeters,
     )
+
+/**
+ * 停留 → 地图标记的输入。
+ *
+ * 锚点取**地点坐标**而不是当天质心：同一天里出门前、回来后是两段停留，
+ * 但落在同一个地点上，标记必须落在同一个像素（见 `StayMarkers`）。
+ */
+internal fun StaySegmentEntity.toMarkerStay(places: List<PlaceSummary>): StayMarkers.Stay {
+    val anchor =
+        placeId?.let { id ->
+            places.firstOrNull { it.place.id == id }?.place?.let {
+                com.hmilyld.daytrail.core
+                    .GeoPoint(latitude = it.latitude, longitude = it.longitude)
+            }
+        }
+    return StayMarkers.Stay(
+        placeId = placeId,
+        point =
+            com.hmilyld.daytrail.core
+                .GeoPoint(latitude = latitude, longitude = longitude),
+        durationMs = endMs - startMs,
+        anchor = anchor,
+    )
+}
 
 /** 今天（本地时区）的日期键。 */
 fun todayKey(): DayKey = DayKeys.of(System.currentTimeMillis())

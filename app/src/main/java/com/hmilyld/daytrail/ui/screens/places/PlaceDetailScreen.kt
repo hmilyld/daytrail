@@ -1,8 +1,14 @@
 package com.hmilyld.daytrail.ui.screens.places
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.DeleteOutline
@@ -28,6 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -38,7 +45,9 @@ import com.amap.api.maps.model.Marker
 import com.amap.api.maps.model.MarkerOptions
 import com.hmilyld.daytrail.AppContainer
 import com.hmilyld.daytrail.R
+import com.hmilyld.daytrail.core.DistanceFormat
 import com.hmilyld.daytrail.core.GeoPoint
+import com.hmilyld.daytrail.domain.PlaceNeighbors
 import com.hmilyld.daytrail.ui.appViewModelFactory
 import com.hmilyld.daytrail.ui.components.map.AmapView
 import com.hmilyld.daytrail.ui.components.map.MapUnavailablePlaceholder
@@ -63,11 +72,14 @@ fun PlaceDetailScreen(
 ) {
     val viewModel: PlaceDetailViewModel = viewModel(factory = appViewModelFactory(container))
     val place by viewModel.place.collectAsStateWithLifecycle()
+    val targets by viewModel.targets.collectAsStateWithLifecycle()
 
     LaunchedEffect(placeId) { viewModel.load(placeId) }
 
     var renaming by remember { mutableStateOf(false) }
     var removing by remember { mutableStateOf(false) }
+    var pickingTarget by remember { mutableStateOf(false) }
+    var pendingTarget by remember { mutableStateOf<PlaceMergeTarget?>(null) }
     val scope = rememberCoroutineScope()
     val mapAvailable = rememberAmapAvailable()
 
@@ -123,6 +135,9 @@ fun PlaceDetailScreen(
             place?.let { summary ->
                 PlaceInfoCard(
                     summary = summary,
+                    suspect = targets.firstOrNull()?.takeIf { it.isSuspect() },
+                    canMerge = targets.isNotEmpty(),
+                    onMergeClick = { pickingTarget = true },
                     modifier =
                         Modifier
                             .align(Alignment.BottomStart)
@@ -174,7 +189,104 @@ fun PlaceDetailScreen(
             },
         )
     }
+
+    if (pickingTarget) {
+        AlertDialog(
+            onDismissRequest = { pickingTarget = false },
+            title = { Text(stringResource(R.string.places_merge_title)) },
+            text = {
+                if (targets.isEmpty()) {
+                    Text(stringResource(R.string.places_merge_empty))
+                } else {
+                    Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                        Text(
+                            text = stringResource(R.string.places_merge_body),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        targets.forEach { target ->
+                            TextButton(
+                                onClick = {
+                                    pickingTarget = false
+                                    pendingTarget = target
+                                },
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(min = 48.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                            ) {
+                                Text(
+                                    text =
+                                        stringResource(
+                                            R.string.places_merge_target,
+                                            target.displayName(),
+                                            DistanceFormat.roundedMeters(target.distanceMeters),
+                                        ),
+                                    textAlign = TextAlign.Start,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { pickingTarget = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            },
+        )
+    }
+
+    pendingTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { pendingTarget = null },
+            title = {
+                Text(
+                    stringResource(R.string.places_merge_confirm_title, target.displayName()),
+                )
+            },
+            text = {
+                Text(
+                    stringResource(
+                        R.string.places_merge_confirm_body,
+                        target.displayName(),
+                    ),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingTarget = null
+                        // 等写库完成再返回，避免弹栈取消写入。
+                        // 合并被拒（源/目标已不存在，或距离超出半径上限）时留在本页，
+                        // 别让用户以为合并成功了。
+                        scope.launch {
+                            if (viewModel.merge(placeId, target.id)) onBack()
+                        }
+                    },
+                ) {
+                    Text(stringResource(R.string.action_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingTarget = null }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            },
+        )
+    }
 }
+
+/** 距得够近才提示「疑似同一个地方」。 */
+private fun PlaceMergeTarget.isSuspect(): Boolean =
+    distanceMeters <= PlaceNeighbors.SUSPECT_RADIUS_METERS
+
+/** 候选的显示名。未命名的地点在界面上不能显示空白。 */
+@Composable
+private fun PlaceMergeTarget.displayName(): String =
+    label?.takeIf { it.isNotBlank() } ?: stringResource(R.string.places_unnamed)
 
 /**
  * 只画一个标记。
@@ -212,6 +324,9 @@ private fun PlaceMap(
 @Composable
 private fun PlaceInfoCard(
     summary: com.hmilyld.daytrail.data.db.dao.PlaceSummary,
+    suspect: PlaceMergeTarget?,
+    canMerge: Boolean,
+    onMergeClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val zone = ZoneId.systemDefault()
@@ -230,11 +345,35 @@ private fun PlaceInfoCard(
         shape = MaterialTheme.shapes.medium,
         modifier = modifier,
     ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.labelLarge,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-        )
+        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+            Text(
+                text = text,
+                style = MaterialTheme.typography.labelLarge,
+            )
+            if (suspect != null) {
+                Text(
+                    text =
+                        stringResource(
+                            R.string.places_merge_hint,
+                            suspect.displayName(),
+                            stringResource(
+                                R.string.places_merge_distance,
+                                DistanceFormat.roundedMeters(suspect.distanceMeters),
+                            ),
+                        ),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.tertiary,
+                )
+            }
+            if (canMerge) {
+                TextButton(
+                    onClick = onMergeClick,
+                    contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp),
+                ) {
+                    Text(stringResource(R.string.places_merge))
+                }
+            }
+        }
     }
 }
 

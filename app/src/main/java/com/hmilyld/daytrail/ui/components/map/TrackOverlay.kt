@@ -23,6 +23,8 @@ import com.amap.api.maps.model.MarkerOptions
 import com.amap.api.maps.model.Polyline
 import com.amap.api.maps.model.PolylineOptions
 import com.hmilyld.daytrail.core.GeoPoint
+import com.hmilyld.daytrail.core.distanceMeters
+import com.hmilyld.daytrail.domain.StayMarkers
 import com.hmilyld.daytrail.domain.TrackSimplifier
 
 /**
@@ -31,6 +33,7 @@ import com.hmilyld.daytrail.domain.TrackSimplifier
  * 负责把一天的轨迹画到地图上：
  * - 折线按断点分段（断点两侧不连直线）
  * - 起点绿、终点蓝、停留琥珀，都是圆点而不是水滴图钉
+ * - 起终点落在停留标记上时不再重复绘制（同一天同一地点只留一个点）
  * - 可选画出每个采样点，让「每隔几分钟一个点」这件事一眼可见
  * - 自动缩放到轨迹范围
  *
@@ -48,8 +51,15 @@ fun TrackOverlay(
      * 正常驾驶时相邻点相距 2–5 公里很常见，按距离切会把完整行程切成十几截。
      */
     segments: List<List<GeoPoint>>,
-    /** 停留点。只放足够长的停留，避免满屏图钉。 */
+    /** 停留点。只放足够长的停留，避免满屏图钉。已按地点聚合，画在地点锚点上。 */
     stays: List<GeoPoint>,
+    /**
+     * 有标记的停留各自的质心。
+     *
+     * 判断「起点/终点是不是已经在某个停留里」必须看它而不是 [stays]：合并过的地点
+     * 半径有几百米，锚点可能离当次停留的质心很远，只看锚点会让起终点重新冒出来。
+     */
+    stayCentroids: List<GeoPoint> = emptyList(),
     polylineColor: Int,
     /**
      * 是否自动缩放镜头以看全轨迹。
@@ -94,6 +104,7 @@ fun TrackOverlay(
         currentAmap,
         segments,
         stays,
+        stayCentroids,
         startIcon,
         endIcon,
         stayIcon,
@@ -137,25 +148,38 @@ fun TrackOverlay(
             }
         }
 
+        // 起点 / 终点：落在停留上就不再画。
+        // 否则「在家开始、回家结束」的一天，同一个家里会叠着起点、终点、停留三个点。
+        // 同时比锚点和质心：合并过的大地点锚点可能离当次停留几百米。
+        val coveredByStay: (GeoPoint) -> Boolean = { point ->
+            (stays + stayCentroids).any {
+                distanceMeters(point, it) <= StayMarkers.ENDPOINT_MERGE_METERS
+            }
+        }
+
         // 起点
-        overlay.markers +=
-            map.addMarker(
-                MarkerOptions()
-                    .position(allPoints.first().toLatLng())
-                    .icon(startIcon)
-                    .anchor(0.5f, 0.5f)
-                    .zIndex(POINT_Z_INDEX),
-            )
+        if (!coveredByStay(allPoints.first())) {
+            overlay.markers +=
+                map.addMarker(
+                    MarkerOptions()
+                        .position(allPoints.first().toLatLng())
+                        .icon(startIcon)
+                        .anchor(0.5f, 0.5f)
+                        .zIndex(POINT_Z_INDEX),
+                )
+        }
 
         // 终点
-        overlay.markers +=
-            map.addMarker(
-                MarkerOptions()
-                    .position(allPoints.last().toLatLng())
-                    .icon(endIcon)
-                    .anchor(0.5f, 0.5f)
-                    .zIndex(POINT_Z_INDEX),
-            )
+        if (!coveredByStay(allPoints.last())) {
+            overlay.markers +=
+                map.addMarker(
+                    MarkerOptions()
+                        .position(allPoints.last().toLatLng())
+                        .icon(endIcon)
+                        .anchor(0.5f, 0.5f)
+                        .zIndex(POINT_Z_INDEX),
+                )
+        }
 
         // 停留点
         stays.forEach { stay ->

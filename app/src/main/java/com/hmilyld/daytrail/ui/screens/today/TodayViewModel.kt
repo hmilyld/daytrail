@@ -15,8 +15,10 @@ import com.hmilyld.daytrail.data.prefs.RecordingState
 import com.hmilyld.daytrail.data.prefs.SamplingTier
 import com.hmilyld.daytrail.data.prefs.SettingsStore
 import com.hmilyld.daytrail.data.repo.TrackRepository
+import com.hmilyld.daytrail.data.repo.toMarkerStay
 import com.hmilyld.daytrail.data.repo.toStaySegment
 import com.hmilyld.daytrail.data.repo.todayKey
+import com.hmilyld.daytrail.domain.StayMarkers
 import com.hmilyld.daytrail.domain.TrackDisplay
 import com.hmilyld.daytrail.domain.TrackPointSample
 import com.hmilyld.daytrail.location.LocationFailureReason
@@ -50,8 +52,10 @@ data class TodayUiState(
     val pointCount: Int = 0,
     /** 地图折线用的坐标。 */
     val trackSegments: List<List<GeoPoint>> = emptyList(),
-    /** 地图停留标记。 */
+    /** 地图停留标记。每天每个地点一个，画在地点锚点上。 */
     val stayMarkers: List<GeoPoint> = emptyList(),
+    /** 有标记的停留各自的质心。起终点落在这些位置上时不再单独画图钉。 */
+    val stayCentroids: List<GeoPoint> = emptyList(),
     /** 地图的文字版概要，供 TalkBack 使用。 */
     val accessibilitySummary: String = "",
     /** 定位异常原因。非 null 表示采集已停止，界面应提示并给重试入口。 */
@@ -139,6 +143,8 @@ class TodayViewModel(
         val points = source.points
         val stays = source.stays
         val startedAt = points.minOfOrNull { it.timestampMs }
+        // 标记按地点聚合（每天每地点一个点），质心单独留着判断起终点是否已被停留代表
+        val stayPlan = StayMarkers.plan(stays.map { it.toMarkerStay(places) })
 
         return TodayUiState(
             dayKey = dayKey,
@@ -170,10 +176,8 @@ class TodayViewModel(
                     },
                     stays.map { it.toStaySegment() },
                 ),
-            stayMarkers =
-                stays
-                    .filter { it.endMs - it.startMs >= TrackDisplay.MIN_STAY_MARKER_MS }
-                    .map { stay -> GeoPoint(stay.latitude, stay.longitude) },
+            stayMarkers = stayPlan.markers,
+            stayCentroids = stayPlan.centroids,
             accessibilitySummary =
                 if (points.isEmpty()) {
                     ""
