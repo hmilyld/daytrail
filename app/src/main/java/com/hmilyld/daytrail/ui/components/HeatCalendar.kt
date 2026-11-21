@@ -1,4 +1,4 @@
-package com.hmilyld.daytrail.ui.components
+﻿package com.hmilyld.daytrail.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import com.hmilyld.daytrail.R
 import com.hmilyld.daytrail.core.HeatLevel
 import com.hmilyld.daytrail.ui.theme.TrailColors
+import com.hmilyld.daytrail.ui.theme.TrailSpacing
 import java.time.LocalDate
 
 /**
@@ -55,11 +56,11 @@ fun HeatCalendar(
             modifier
                 .widthIn(max = CALENDAR_MAX_WIDTH)
                 .clearAndSetSemantics { contentDescription = description },
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(TrailSpacing.xs),
     ) {
         repeat(cells / 7) { row ->
             Row(
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(TrailSpacing.xs),
             ) {
                 repeat(7) { column ->
                     val index = row * 7 + column
@@ -151,7 +152,7 @@ fun HeatLegend(modifier: Modifier = Modifier) {
     Row(
         modifier = modifier,
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(TrailSpacing.xs),
     ) {
         Text(
             text = stringResource(R.string.history_legend_less),

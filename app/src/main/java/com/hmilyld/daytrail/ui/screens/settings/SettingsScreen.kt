@@ -1,59 +1,41 @@
-package com.hmilyld.daytrail.ui.screens.settings
+﻿package com.hmilyld.daytrail.ui.screens.settings
 
-import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowForwardIos
+import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
 import androidx.compose.material.icons.outlined.BatterySaver
 import androidx.compose.material.icons.outlined.Bedtime
-import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.IosShare
-import androidx.compose.material.icons.outlined.LightMode
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.MyLocation
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Psychology
-import androidx.compose.material.icons.outlined.ReceiptLong
-import androidx.compose.material.icons.outlined.SettingsBrightness
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.DatePicker
-import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -63,10 +45,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -77,17 +57,18 @@ import com.hmilyld.daytrail.R
 import com.hmilyld.daytrail.data.export.ExportFormat
 import com.hmilyld.daytrail.data.export.ExportRange
 import com.hmilyld.daytrail.data.export.ExportResult
+import com.hmilyld.daytrail.data.import.ConflictStrategy
+import com.hmilyld.daytrail.data.import.ImportPreview
+import com.hmilyld.daytrail.data.import.PreviewResult
 import com.hmilyld.daytrail.data.prefs.SamplingTier
 import com.hmilyld.daytrail.data.prefs.ThemeMode
+import com.hmilyld.daytrail.location.RecordingService
 import com.hmilyld.daytrail.permission.Permissions
 import com.hmilyld.daytrail.ui.appViewModelFactory
-import com.hmilyld.daytrail.ui.components.trailSegmentedColors
 import com.hmilyld.daytrail.ui.screens.permission.PermissionHealthSummary
 import com.hmilyld.daytrail.ui.theme.DayTrailTheme
+import com.hmilyld.daytrail.ui.theme.TrailSpacing
 import kotlinx.coroutines.launch
-import java.time.Instant
-import java.time.LocalDate
-import java.time.ZoneOffset
 
 /**
  * 设置页。
@@ -114,8 +95,18 @@ fun SettingsScreen(
     val scope = rememberCoroutineScope()
 
     var showExportDialog by rememberSaveable { mutableStateOf(false) }
+    var showPrivacyDialog by rememberSaveable { mutableStateOf(false) }
+    var showRevokeDialog by rememberSaveable { mutableStateOf(false) }
     // 选好的导出范围。launcher 回调只给 URI，所以先存在这里。
     var pendingRange by remember { mutableStateOf(ExportRange()) }
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    var importPreview by remember { mutableStateOf<ImportPreview?>(null) }
+    var importStrategy by remember { mutableStateOf(ConflictStrategy.SKIP) }
+    var importing by remember { mutableStateOf(false) }
+
+    val autoUpdateCheck by
+        container.settingsStore.autoUpdateCheck.collectAsStateWithLifecycle(initialValue = true)
 
     // 在组合期解析文案：LocalContext.getString 不是配置感知的，
     // 语言或字体缩放变化时可能返回过期值（lint 会报错）。
@@ -123,7 +114,7 @@ fun SettingsScreen(
     val exportEmptyText = stringResource(R.string.export_empty)
     val exportFailedTemplate = stringResource(R.string.export_failed)
 
-    /** 导出结果反馈。用 Toast 而不是 Snackbar：设置页没有 Scaffold 宿主，最省事。 */
+    /** 导出结果反馈。用 Snackbar：跟随主题、可被 TalkBack 播报，也不需要长驻屏幕。 */
     fun report(result: ExportResult) {
         val message =
             when (result) {
@@ -136,7 +127,7 @@ fun SettingsScreen(
                 ExportResult.Empty -> exportEmptyText
                 is ExportResult.Failure -> String.format(exportFailedTemplate, result.message)
             }
-        Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+        scope.launch { snackbarHostState.showSnackbar(message) }
     }
 
     fun runExport(
@@ -159,6 +150,52 @@ fun SettingsScreen(
             ActivityResultContracts.CreateDocument("application/gpx+xml"),
         ) { uri -> uri?.let { runExport(it, ExportFormat.GPX) } }
 
+    // 导入：SAF 只返回一个 URI，不申请任何存储权限。
+    // 用 */* 而不是按 MIME 过滤：GPX 在不同 provider 上可能是
+    // application/gpx+xml、text/xml 或 application/octet-stream，
+    // 按扩展名过滤会把大量正常文件挡在外面。真正的格式判断靠内容嗅探。
+    val importFailedTemplate = stringResource(R.string.import_failed)
+    val importSuccessTemplate = stringResource(R.string.import_success)
+    val importNothingText = stringResource(R.string.import_nothing)
+
+    val importLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            uri ?: return@rememberLauncherForActivityResult
+            scope.launch {
+                when (val result = container.importManager.preview(uri)) {
+                    is PreviewResult.Ready -> importPreview = result.preview
+                    is PreviewResult.Failure ->
+                        snackbarHostState.showSnackbar(
+                            String.format(importFailedTemplate, result.message),
+                        )
+                }
+            }
+        }
+
+    fun runImport(preview: ImportPreview) {
+        importing = true
+        scope.launch {
+            val message =
+                try {
+                    val outcome = container.importManager.commit(preview, importStrategy)
+                    if (outcome.importedPoints == 0) {
+                        importNothingText
+                    } else {
+                        String.format(
+                            importSuccessTemplate,
+                            outcome.importedDays,
+                            outcome.importedPoints,
+                            outcome.skippedDays,
+                        )
+                    }
+                } catch (error: Exception) {
+                    String.format(importFailedTemplate, error.message ?: "写入失败")
+                }
+            importing = false
+            snackbarHostState.showSnackbar(message)
+        }
+    }
+
     SettingsContent(
         state = state,
         onTierChange = viewModel::setSamplingTier,
@@ -170,8 +207,16 @@ fun SettingsScreen(
         onOpenDiagnostics = onOpenDiagnostics,
         onOpenLocationSettings = { Permissions.openAppSettings(context) },
         onOpenNotificationSettings = { Permissions.openNotificationSettings(context) },
-        onOpenBatterySettings = { Permissions.requestIgnoreBatteryOptimizations(context) },
+        onOpenBatterySettings = { Permissions.openBatteryOptimizationSettings(context) },
+        onOpenPrivacy = { showPrivacyDialog = true },
+        onImportClick = { importLauncher.launch(arrayOf("*/*")) },
         onExportClick = { showExportDialog = true },
+        autoUpdateCheck = autoUpdateCheck,
+        onAutoUpdateCheckChange = { enabled ->
+            scope.launch { container.settingsStore.setAutoUpdateCheck(enabled) }
+        },
+        onCheckUpdate = { container.updateCoordinator.check(force = true) },
+        snackbarHostState = snackbarHostState,
         modifier = modifier,
     )
 
@@ -191,219 +236,72 @@ fun SettingsScreen(
             },
         )
     }
-}
 
-/** 导出范围选项。 */
-private enum class ExportRangeOption { ALL, LAST_7, THIS_MONTH, CUSTOM }
+    if (showPrivacyDialog) {
+        PrivacyDialog(
+            onDismiss = { showPrivacyDialog = false },
+            onRevoke = {
+                showPrivacyDialog = false
+                showRevokeDialog = true
+            },
+        )
+    }
 
-/** 选择导出格式与范围。 */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun ExportDialog(
-    onDismiss: () -> Unit,
-    onPick: (ExportFormat, ExportRange) -> Unit,
-) {
-    var format by remember { mutableStateOf(ExportFormat.GEOJSON) }
-    var option by remember { mutableStateOf(ExportRangeOption.LAST_7) }
-    var customFrom by remember { mutableStateOf<LocalDate?>(null) }
-    var customTo by remember { mutableStateOf<LocalDate?>(null) }
-    var pickingStart by remember { mutableStateOf(false) }
-    var pickingEnd by remember { mutableStateOf(false) }
+    importPreview?.let { preview ->
+        ImportPreviewDialog(
+            preview = preview,
+            strategy = importStrategy,
+            onStrategyChange = { importStrategy = it },
+            onDismiss = { importPreview = null },
+            onConfirm = {
+                importPreview = null
+                runImport(preview)
+            },
+        )
+    }
 
-    val today = LocalDate.now()
-    val range =
-        when (option) {
-            ExportRangeOption.ALL -> ExportRange()
-            ExportRangeOption.LAST_7 -> {
-                ExportRange(today.minusDays(6).toString(), today.toString())
-            }
-            ExportRangeOption.THIS_MONTH -> {
-                ExportRange(today.withDayOfMonth(1).toString(), today.toString())
-            }
-            ExportRangeOption.CUSTOM -> ExportRange(customFrom?.toString(), customTo?.toString())
-        }
-    val fromDate = customFrom
-    val toDate = customTo
-    val rangeReady =
-        option != ExportRangeOption.CUSTOM ||
-            (fromDate != null && toDate != null && !fromDate.isAfter(toDate))
+    if (importing) {
+        // 导入期间不可取消：事务已经提交，中断只会留下「以为失败了但其实成功」的困惑。
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text(text = stringResource(R.string.import_progress)) },
+            text = { LinearProgressIndicator(modifier = Modifier.fillMaxWidth()) },
+            confirmButton = {},
+        )
+    }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        icon = { Icon(imageVector = Icons.Outlined.IosShare, contentDescription = null) },
-        title = { Text(text = stringResource(R.string.export_title)) },
-        text = {
-            Column {
-                Text(
-                    text = stringResource(R.string.export_format_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                    val formats = ExportFormat.entries
-                    formats.forEachIndexed { index, value ->
-                        SegmentedButton(
-                            selected = format == value,
-                            onClick = { format = value },
-                            shape = SegmentedButtonDefaults.itemShape(index, formats.size),
-                            colors = trailSegmentedColors(),
-                        ) {
-                            Text(
-                                text = stringResource(formatTitle(value)),
-                                maxLines = 1,
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-                Text(
-                    text = stringResource(R.string.export_range),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                    val options = ExportRangeOption.entries
-                    options.forEachIndexed { index, value ->
-                        SegmentedButton(
-                            selected = option == value,
-                            onClick = { option = value },
-                            shape = SegmentedButtonDefaults.itemShape(index, options.size),
-                            colors = trailSegmentedColors(),
-                        ) {
-                            Text(text = stringResource(rangeTitle(value)), maxLines = 1)
-                        }
-                    }
-                }
-
-                if (option == ExportRangeOption.CUSTOM) {
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(
-                            onClick = { pickingStart = true },
-                            modifier = Modifier.weight(1f),
-                        ) {
-                            Text(
-                                text =
-                                    customFrom?.toString()
-                                        ?: stringResource(R.string.export_range_start),
-                                maxLines = 1,
-                            )
-                        }
-                        OutlinedButton(
-                            onClick = { pickingEnd = true },
-                            modifier = Modifier.weight(1f),
-                        ) {
-                            Text(
-                                text =
-                                    customTo?.toString()
-                                        ?: stringResource(R.string.export_range_end),
-                                maxLines = 1,
-                            )
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { onPick(format, range) },
-                enabled = rangeReady,
-            ) {
-                Text(text = stringResource(R.string.export_action))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(text = stringResource(R.string.action_cancel))
-            }
-        },
-    )
-
-    if (pickingStart) {
-        val state =
-            rememberDatePickerState(
-                initialSelectedDateMillis =
-                    customFrom?.atStartOfDay(ZoneOffset.UTC)?.toInstant()?.toEpochMilli(),
-            )
-        DatePickerDialog(
-            onDismissRequest = { pickingStart = false },
+    if (showRevokeDialog) {
+        AlertDialog(
+            onDismissRequest = { showRevokeDialog = false },
+            title = { Text(text = stringResource(R.string.privacy_revoke_title)) },
+            text = { Text(text = stringResource(R.string.privacy_revoke_body)) },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        state.selectedDateMillis?.let { millis ->
-                            customFrom =
-                                Instant
-                                    .ofEpochMilli(millis)
-                                    .atZone(ZoneOffset.UTC)
-                                    .toLocalDate()
+                        showRevokeDialog = false
+                        // 先停服务，再落库：顺序反了会有一小段时间
+                        // 「已撤回但仍在采集」。
+                        RecordingService.stop(context)
+                        scope.launch {
+                            container.settingsStore.setPrivacyAccepted(false)
+                            container.settingsStore.setOnboardingCompleted(false)
                         }
-                        pickingStart = false
                     },
                 ) {
-                    Text(text = stringResource(R.string.action_confirm))
+                    Text(
+                        text = stringResource(R.string.privacy_revoke),
+                        color = MaterialTheme.colorScheme.error,
+                    )
                 }
             },
             dismissButton = {
-                TextButton(onClick = { pickingStart = false }) {
+                TextButton(onClick = { showRevokeDialog = false }) {
                     Text(text = stringResource(R.string.action_cancel))
                 }
             },
-        ) {
-            DatePicker(state = state)
-        }
-    }
-
-    if (pickingEnd) {
-        val state =
-            rememberDatePickerState(
-                initialSelectedDateMillis =
-                    customTo?.atStartOfDay(ZoneOffset.UTC)?.toInstant()?.toEpochMilli(),
-            )
-        DatePickerDialog(
-            onDismissRequest = { pickingEnd = false },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        state.selectedDateMillis?.let { millis ->
-                            customTo =
-                                Instant
-                                    .ofEpochMilli(millis)
-                                    .atZone(ZoneOffset.UTC)
-                                    .toLocalDate()
-                        }
-                        pickingEnd = false
-                    },
-                ) {
-                    Text(text = stringResource(R.string.action_confirm))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { pickingEnd = false }) {
-                    Text(text = stringResource(R.string.action_cancel))
-                }
-            },
-        ) {
-            DatePicker(state = state)
-        }
+        )
     }
 }
-
-private fun formatTitle(format: ExportFormat): Int =
-    when (format) {
-        ExportFormat.GEOJSON -> R.string.export_geojson_title
-        ExportFormat.GPX -> R.string.export_gpx_title
-    }
-
-private fun rangeTitle(option: ExportRangeOption): Int =
-    when (option) {
-        ExportRangeOption.ALL -> R.string.export_range_all
-        ExportRangeOption.LAST_7 -> R.string.export_range_last_7
-        ExportRangeOption.THIS_MONTH -> R.string.export_range_month
-        ExportRangeOption.CUSTOM -> R.string.export_range_custom
-    }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -419,13 +317,20 @@ private fun SettingsContent(
     onOpenLocationSettings: () -> Unit,
     onOpenNotificationSettings: () -> Unit,
     onOpenBatterySettings: () -> Unit,
+    onOpenPrivacy: () -> Unit,
+    onImportClick: () -> Unit,
     onExportClick: () -> Unit,
     modifier: Modifier = Modifier,
+    autoUpdateCheck: Boolean = true,
+    onAutoUpdateCheckChange: (Boolean) -> Unit = {},
+    onCheckUpdate: () -> Unit = {},
+    snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
 ) {
     var showClearDialog by rememberSaveable { mutableStateOf(false) }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {
@@ -447,7 +352,7 @@ private fun SettingsContent(
                     Modifier
                         .fillMaxSize()
                         .verticalScroll(rememberScrollState())
-                        .padding(horizontal = 16.dp),
+                        .padding(horizontal = TrailSpacing.lg),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Column(modifier = Modifier.widthIn(max = 840.dp)) {
@@ -456,7 +361,7 @@ private fun SettingsContent(
                     SettingsSection(title = stringResource(R.string.mine_overview)) {
                         PermissionHealthSummary(
                             onOpen = onOpenPermissions,
-                            modifier = Modifier.padding(8.dp),
+                            modifier = Modifier.padding(TrailSpacing.sm),
                         )
                     }
 
@@ -524,7 +429,13 @@ private fun SettingsContent(
                             onClick = onExportClick,
                         )
                         SettingsNavRow(
-                            icon = Icons.Outlined.ReceiptLong,
+                            icon = Icons.Outlined.FileDownload,
+                            title = stringResource(R.string.settings_import),
+                            subtitle = stringResource(R.string.settings_import_desc),
+                            onClick = onImportClick,
+                        )
+                        SettingsNavRow(
+                            icon = Icons.AutoMirrored.Outlined.ReceiptLong,
                             title = stringResource(R.string.settings_diagnostics),
                             subtitle = stringResource(R.string.settings_diagnostics_desc),
                             onClick = onOpenDiagnostics,
@@ -547,6 +458,18 @@ private fun SettingsContent(
                         )
                     }
 
+                    // ---- 隐私与合规 ----
+                    // 单独成组而不是塞进「数据」：撤回同意是一项法律权利，
+                    // 需要能被明确找到，而不是藏在导出/删除之间。
+                    SettingsSection(title = stringResource(R.string.privacy_section_title)) {
+                        SettingsNavRow(
+                            icon = Icons.Outlined.Lock,
+                            title = stringResource(R.string.privacy_row_title),
+                            subtitle = stringResource(R.string.privacy_row_desc),
+                            onClick = onOpenPrivacy,
+                        )
+                    }
+
                     // ---- 关于 ----
                     SettingsSection(title = stringResource(R.string.settings_section_about)) {
                         SettingsInfoRow(
@@ -561,9 +484,26 @@ private fun SettingsContent(
                                     BuildConfig.VERSION_CODE,
                                 ),
                         )
+                        SettingsSwitchRow(
+                            icon = Icons.Outlined.Refresh,
+                            title = stringResource(R.string.settings_auto_update),
+                            subtitle = stringResource(R.string.settings_auto_update_desc),
+                            checked = autoUpdateCheck,
+                            onCheckedChange = onAutoUpdateCheckChange,
+                        )
+                        SettingsNavRow(
+                            icon = Icons.Outlined.Refresh,
+                            title = stringResource(R.string.settings_check_update),
+                            subtitle =
+                                stringResource(
+                                    R.string.settings_check_update_desc,
+                                    BuildConfig.VERSION_NAME,
+                                ),
+                            onClick = onCheckUpdate,
+                        )
                     }
 
-                    Column(modifier = Modifier.padding(bottom = 32.dp)) {}
+                    Column(modifier = Modifier.padding(bottom = TrailSpacing.xxl)) {}
                 }
             }
         }
@@ -603,231 +543,6 @@ private fun SettingsContent(
     }
 }
 
-/**
- * 设置分组：小节标题 + 圆角卡片。
- *
- * 用卡片而不是分割线：Material 3 里分组靠「容器色调 + 圆角」表达层级，
- * 满屏分割线会让页面显得碎片化。
- */
-@Composable
-private fun SettingsSection(
-    title: String,
-    content: @Composable () -> Unit,
-) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(start = 4.dp, top = 20.dp, bottom = 8.dp),
-        )
-        Surface(
-            color = MaterialTheme.colorScheme.surfaceContainer,
-            shape = MaterialTheme.shapes.large,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Column {
-                content()
-            }
-        }
-    }
-}
-
-/** 主题选择：跟随系统 / 浅色 / 深色。 */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun ThemeSelector(
-    selected: ThemeMode,
-    onSelect: (ThemeMode) -> Unit,
-) {
-    val options =
-        listOf(
-            ThemeMode.SYSTEM to
-                (
-                    stringResource(
-                        R.string.settings_theme_system,
-                    ) to Icons.Outlined.SettingsBrightness
-                ),
-            ThemeMode.LIGHT to
-                (stringResource(R.string.settings_theme_light) to Icons.Outlined.LightMode),
-            ThemeMode.DARK to
-                (stringResource(R.string.settings_theme_dark) to Icons.Outlined.DarkMode),
-        )
-
-    Column(modifier = Modifier.padding(16.dp)) {
-        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-            options.forEachIndexed { index, (mode, labelAndIcon) ->
-                val (label, icon) = labelAndIcon
-                SegmentedButton(
-                    selected = mode == selected,
-                    onClick = { onSelect(mode) },
-                    shape = SegmentedButtonDefaults.itemShape(index, options.size),
-                    colors = trailSegmentedColors(),
-                    icon = {
-                        SegmentedButtonDefaults.Icon(active = mode == selected) {
-                            Icon(
-                                imageVector = icon,
-                                contentDescription = null,
-                                modifier = Modifier.size(SegmentedButtonDefaults.IconSize),
-                            )
-                        }
-                    },
-                ) {
-                    Text(text = label)
-                }
-            }
-        }
-    }
-}
-
-/** 采样档位选择。只有三项，用单选列表比下拉更直接。 */
-@Composable
-private fun SamplingTierSelector(
-    selected: SamplingTier,
-    onSelect: (SamplingTier) -> Unit,
-) {
-    Column(modifier = Modifier.padding(vertical = 4.dp)) {
-        SamplingTier.entries.forEach { tier ->
-            val label =
-                when (tier) {
-                    SamplingTier.POWER_SAVER -> stringResource(R.string.settings_tier_power_saver)
-                    SamplingTier.BALANCED -> stringResource(R.string.settings_tier_balanced)
-                    SamplingTier.HIGH_ACCURACY ->
-                        stringResource(
-                            R.string.settings_tier_high_accuracy,
-                        )
-                }
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .clickable(role = Role.RadioButton) { onSelect(tier) }
-                        .heightIn(min = 56.dp)
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-            ) {
-                RadioButton(
-                    selected = tier == selected,
-                    onClick = null,
-                )
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.padding(start = 12.dp),
-                )
-            }
-        }
-    }
-}
-
-/** 带开关的行。整行可点击，命中区域大于开关本身。 */
-@Composable
-private fun SettingsSwitchRow(
-    icon: ImageVector,
-    title: String,
-    subtitle: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-) {
-    ListItem(
-        headlineContent = { Text(text = title) },
-        supportingContent = { Text(text = subtitle) },
-        leadingContent = { Icon(imageVector = icon, contentDescription = null) },
-        trailingContent = {
-            Switch(checked = checked, onCheckedChange = null)
-        },
-        colors =
-            ListItemDefaults.colors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainer,
-            ),
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .clickable(role = Role.Switch) { onCheckedChange(!checked) }
-                .heightIn(min = 56.dp),
-    )
-}
-
-/** 可跳转的行：尾部有箭头。 */
-@Composable
-private fun SettingsNavRow(
-    icon: ImageVector,
-    title: String,
-    subtitle: String,
-    onClick: () -> Unit,
-    destructive: Boolean = false,
-) {
-    ListItem(
-        headlineContent = {
-            Text(
-                text = title,
-                color =
-                    if (destructive) {
-                        MaterialTheme.colorScheme.error
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    },
-            )
-        },
-        supportingContent = { Text(text = subtitle) },
-        leadingContent = {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint =
-                    if (destructive) {
-                        MaterialTheme.colorScheme.error
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-            )
-        },
-        trailingContent = {
-            Icon(
-                imageVector = Icons.AutoMirrored.Outlined.ArrowForwardIos,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(16.dp),
-            )
-        },
-        colors =
-            ListItemDefaults.colors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainer,
-            ),
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .clickable(role = Role.Button, onClick = onClick)
-                .heightIn(min = 56.dp),
-    )
-}
-
-/** 纯信息行：不可点击，无箭头。 */
-@Composable
-private fun SettingsInfoRow(
-    icon: ImageVector,
-    title: String,
-    subtitle: String,
-) {
-    ListItem(
-        headlineContent = { Text(text = title) },
-        supportingContent = { Text(text = subtitle) },
-        leadingContent = {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        },
-        colors =
-            ListItemDefaults.colors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainer,
-            ),
-        modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
-    )
-}
-
 @Preview(showBackground = true, name = "设置 - 浅色")
 @Composable
 private fun SettingsLightPreview() {
@@ -844,6 +559,8 @@ private fun SettingsLightPreview() {
             onOpenLocationSettings = {},
             onOpenNotificationSettings = {},
             onOpenBatterySettings = {},
+            onOpenPrivacy = {},
+            onImportClick = {},
             onExportClick = {},
         )
     }
@@ -870,6 +587,8 @@ private fun SettingsDarkPreview() {
             onOpenLocationSettings = {},
             onOpenNotificationSettings = {},
             onOpenBatterySettings = {},
+            onOpenPrivacy = {},
+            onImportClick = {},
             onExportClick = {},
         )
     }

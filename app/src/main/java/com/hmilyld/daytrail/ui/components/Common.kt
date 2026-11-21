@@ -1,11 +1,14 @@
-package com.hmilyld.daytrail.ui.components
+﻿package com.hmilyld.daytrail.ui.components
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -18,6 +21,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.hmilyld.daytrail.ui.theme.TrailSpacing
 
 /**
  * 空状态。图标是装饰性的（contentDescription = null），
@@ -34,7 +38,7 @@ fun EmptyState(
         modifier =
             modifier
                 .fillMaxWidth()
-                .padding(horizontal = 32.dp, vertical = 48.dp),
+                .padding(horizontal = TrailSpacing.xxl, vertical = 48.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
@@ -54,14 +58,14 @@ fun EmptyState(
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onSurface,
             textAlign = TextAlign.Center,
-            modifier = Modifier.padding(top = 16.dp),
+            modifier = Modifier.padding(top = TrailSpacing.lg),
         )
         Text(
             text = body,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
-            modifier = Modifier.padding(top = 8.dp),
+            modifier = Modifier.padding(top = TrailSpacing.sm),
         )
     }
 }
@@ -113,3 +117,14 @@ fun MapAccessibilityOverlay(
         )
     }
 }
+
+/**
+ * 全屏（immersive）时给地图浮层加安全区避让。
+ *
+ * 非全屏时外层 Scaffold 已经把 `safeDrawing` 消费掉了，这里再加会双重缩进；
+ * 全屏时外层为了让地图真正铺到状态栏与手势条下面而不再消费 inset，
+ * 浮层（状态胶囊、地图按钮、无障碍文字）就必须自己避让，否则会被系统栏压住。
+ */
+@Composable
+fun Modifier.immersiveSafePadding(immersive: Boolean): Modifier =
+    if (immersive) windowInsetsPadding(WindowInsets.safeDrawing) else this

@@ -11,6 +11,17 @@ import com.hmilyld.daytrail.domain.RouteOverride
 import kotlinx.coroutines.flow.Flow
 
 /**
+ * 一天待写入的导入数据。
+ *
+ * 点已经转换成 **GCJ-02**：坐标系转换在导入层完成（见 `data/import`），
+ * 仓库只负责落库与重算，不对坐标做任何解释。
+ */
+data class DayImportBatch(
+    val dayKey: DayKey,
+    val points: List<TrackPointEntity>,
+)
+
+/**
  * 轨迹数据的唯一入口。
  *
  * 这是**云端接缝 ①**：上层（ViewModel / Service）只依赖这个接口，
@@ -22,6 +33,20 @@ interface TrackRepository {
 
     /** 批量写入原始点。返回实际插入条数。 */
     suspend fun appendPoints(points: List<TrackPointEntity>): Int
+
+    /**
+     * 批量导入若干天。
+     *
+     * **原子性**：所有批次在同一个事务里写入并重算，任一天失败整体回滚，
+     * 不会留下「导入了一半」的数据。
+     *
+     * [replaceExisting] 为 true 表示覆盖语义（先清掉这些天的旧数据）；
+     * 为 false 表示合并语义（旧点保留，调用方已过滤掉重复时间戳）。
+     */
+    suspend fun importDays(
+        batches: List<DayImportBatch>,
+        replaceExisting: Boolean,
+    ): Int
 
     /** 重算某天的汇总与停留段，并写入断点。 */
     suspend fun recomputeDay(dayKey: DayKey)

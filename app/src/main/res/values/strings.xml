@@ -1,11 +1,10 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">行迹</string>
 
     <!-- 底部导航 / 导航栏 -->
     <string name="nav_today">今日</string>
     <string name="nav_history">历史</string>
-    <string name="nav_settings">设置</string>
 
     <!-- 通用 -->
     <string name="action_back">返回</string>
@@ -16,7 +15,6 @@
     <string name="today_stat_distance">里程</string>
     <string name="today_stat_duration">时长</string>
     <string name="today_stat_stops">停留</string>
-    <string name="today_unit_km">km</string>
     <string name="today_recording">记录中</string>
     <string name="today_paused">已暂停</string>
     <string name="today_idle">未开始</string>
@@ -28,7 +26,6 @@
     <string name="history_title">历史</string>
     <string name="history_month_label">%1$d 年 %2$d 月</string>
     <string name="history_month_total_label">本月合计</string>
-    <string name="history_unit_km">km</string>
     <string name="history_previous_month">上个月</string>
     <string name="history_next_month">下个月</string>
     <string name="history_empty_title">这个月还没有记录</string>
@@ -133,12 +130,9 @@
     <string name="export_range_custom">自定义</string>
     <string name="export_range_start">开始日期</string>
     <string name="export_range_end">结束日期</string>
-    <string name="export_choose_format">选择导出格式</string>
     <string name="export_format_hint">坐标会转换为国际标准的 WGS-84，可直接导入 Google Earth、Garmin、两步路等工具。</string>
     <string name="export_geojson_title">GeoJSON</string>
-    <string name="export_geojson_desc">通用地理数据格式，适合程序处理</string>
     <string name="export_gpx_title">GPX</string>
-    <string name="export_gpx_desc">运动与户外设备通用，含时间与停留点</string>
     <string name="export_success">已导出 %1$d 天、%2$d 个点</string>
     <string name="export_empty">还没有可导出的数据</string>
     <string name="export_failed">导出失败：%1$s</string>
@@ -217,7 +211,6 @@
 
     <!-- 历史与详情 -->
     <string name="day_detail_empty">这一天还没有轨迹</string>
-    <string name="history_distance_km">%1$s km</string>
 
     <!-- 设置补充 -->
     <string name="settings_storage_points">%1$d 个采样点</string>
@@ -241,7 +234,6 @@
     <string name="timeline_stay">停留</string>
     <string name="timeline_stay_minutes">停留 %1$d 分钟</string>
     <string name="timeline_start">开始记录</string>
-    <string name="timeline_end">结束记录</string>
     <string name="timeline_empty">还没有行程记录</string>
 
     <!-- 今日（重构） -->
@@ -268,4 +260,86 @@
     <!-- 我的 -->
     <string name="nav_me">我的</string>
     <string name="mine_overview">概览</string>
+
+    <!-- 隐私与同意 -->
+    <string name="privacy_section_title">隐私与合规</string>
+    <string name="privacy_row_title">隐私政策与同意</string>
+    <string name="privacy_row_desc">查看披露内容，或撤回同意</string>
+    <string name="privacy_consent_title">行踪轨迹与隐私</string>
+    <string name="privacy_consent_body">本应用会记录你的行踪轨迹，它属于敏感个人信息，只有在你同意后才开始记录。数据默认只保存在本机。</string>
+    <string name="privacy_consent_checkbox">我已知晓并同意记录我的行踪轨迹（敏感个人信息）</string>
+    <string name="privacy_consent_required">需先勾选同意，才能开始使用</string>
+    <string name="privacy_view_policy">查看完整隐私政策</string>
+    <string name="privacy_dialog_title">隐私政策摘要</string>
+    <string name="privacy_dialog_body">1. 记录什么：定位坐标、时间与精度，由这些推算里程和停留。行踪轨迹属于敏感个人信息。\n\n2. 存在哪：全部保存在本机的应用私有目录，不上传服务器，也不进入云备份与设备迁移。\n\n3. 何时联网：只有你主动点「补全路线」，或新建地点、点「补全名称」时，才会把相关坐标发给高德 Web 服务。\n\n4. 地图 SDK：高德地图 SDK 会自行采集设备标识、网络状态与粗略位置，用于加载地图。\n\n5. 诊断日志：只记录状态变化（例如「进入休眠」），不含坐标；只有你手动导出时才离开本机。\n\n6. 检查更新：会向 GitHub 发起请求，携带 IP 地址与当前版本号。\n\n7. 不采集：剪贴板、通讯录、短信、相册、IMEI、账号信息。\n\n8. 撤回：随时可在「我的 → 隐私与合规」撤回同意，撤回后立即停止记录。\n\n完整版本见项目仓库 docs/privacy-policy.md。</string>
+    <string name="privacy_revoke">撤回同意并停止记录</string>
+    <string name="privacy_revoke_title">撤回同意？</string>
+    <string name="privacy_revoke_body">撤回后将停止记录并回到引导页。已记录的轨迹仍保存在本机，可在「数据 → 导出」导出后删除。</string>
+    <string name="privacy_close">关闭</string>
+
+    <!-- 数据导入 -->
+    <string name="settings_import">导入数据</string>
+    <string name="settings_import_desc">导入之前导出的 GeoJSON / GPX，坐标自动转换</string>
+    <string name="import_dialog_title">导入预览</string>
+    <string name="import_file_line">%1$s · %2$s</string>
+    <string name="import_summary">%1$d 天 · %2$d 个点 · %3$s ~ %4$s</string>
+    <string name="import_days_new">新增 %1$d 天</string>
+    <string name="import_days_existing">已存在 %1$d 天</string>
+    <string name="import_dropped">已丢弃 %1$d 个无效点</string>
+    <string name="import_coord_note">文件是 WGS-84，导入时会转换为高德坐标系（GCJ-02）。停留点与地点由应用重新识别，不从文件读取。</string>
+    <string name="import_strategy">同一天已有数据时</string>
+    <string name="import_strategy_skip">跳过</string>
+    <string name="import_strategy_merge">合并</string>
+    <string name="import_strategy_replace">覆盖</string>
+    <string name="import_replace_warning">覆盖会删除这些天的现有记录，且无法撤销。</string>
+    <string name="import_start">开始导入</string>
+    <string name="import_progress">正在导入…</string>
+    <string name="import_success">导入 %1$d 天、%2$d 个点；跳过 %3$d 天</string>
+    <string name="import_nothing">没有写入任何数据</string>
+    <string name="import_failed">导入失败：%1$s</string>
+    <string name="import_format_geojson">GeoJSON</string>
+    <string name="import_format_gpx">GPX</string>
+
+    <!-- 在线更新 -->
+    <string name="settings_auto_update">自动检查更新</string>
+    <string name="settings_auto_update_desc">每天最多检查一次，失败不打扰</string>
+    <string name="settings_check_update">检查更新</string>
+    <string name="settings_check_update_desc">当前 %1$s</string>
+    <string name="update_up_to_date">已是最新版本</string>
+    <string name="update_not_configured_title">未配置更新源</string>
+    <string name="update_not_configured_body">这个构建没有设置 app.updateRepo，无法查询在线版本。如果你是自行编译的，把 gradle.properties 里的 app.updateRepo 改成本项目的 OWNER/REPO 即可。</string>
+    <string name="update_available_title">发现新版本 %1$s</string>
+    <string name="update_size">安装包 %1$s</string>
+    <string name="update_no_notes">这个版本没有填写更新说明。</string>
+    <string name="update_download">下载</string>
+    <string name="update_later">稍后</string>
+    <string name="update_install">安装</string>
+    <string name="update_downloading">正在下载 %1$d%%</string>
+    <string name="update_preparing">正在准备…</string>
+    <string name="update_ready_title">下载完成</string>
+    <string name="update_ready_body">安装包已通过校验。接下来会打开系统安装界面。</string>
+    <string name="update_install_permission">需要先允许本应用安装应用。已为你打开系统设置，授权后回到这里再点一次安装。</string>
+    <string name="update_failed_title">更新失败</string>
+    <string name="update_err_checksum">安装包校验失败，可能下载不完整，请重试。</string>
+    <string name="update_err_signer">这个安装包的签名与本机不一致，已拒绝安装。</string>
+    <string name="update_err_package">这个安装包的包名与本机不一致，已拒绝安装。</string>
+    <string name="update_err_unreadable">安装包损坏，无法读取。</string>
+    <string name="update_err_save">无法保存安装包，请检查存储空间。</string>
+    <string name="update_open_page">打开 Release 页面</string>
+    <string name="update_close">关闭</string>
+
+    <!-- 时间轴与地图文字摘要（原来写在 ViewModel 里） -->
+    <string name="timeline_end">结束记录</string>
+    <string name="timeline_gap_title">这段时间没有记录</string>
+    <string name="timeline_gap_detail">约 %1$d 分钟没有采样点</string>
+    <string name="day_detail_route_no_segments">这一天没有可补全的驾车段</string>
+    <string name="day_detail_route_failed">补全失败</string>
+    <string name="day_detail_route_no_match">这段轨迹没能匹配到路网</string>
+    <string name="map_summary_title">轨迹地图</string>
+    <string name="map_summary_stays">%1$d 处停留</string>
+    <string name="map_summary_points">%1$d 个采样点</string>
+    <string name="map_summary_segments">分为 %1$d 段</string>
+    <string name="map_summary_today_points">轨迹地图，今日共 %1$d 个采样点</string>
+    <string name="map_summary_today_both">轨迹地图，今日 %1$d 处停留，共 %2$d 个采样点</string>
+    <string name="list_separator">，</string>
 </resources>

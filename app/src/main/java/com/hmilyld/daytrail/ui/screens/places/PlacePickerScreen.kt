@@ -1,4 +1,4 @@
-package com.hmilyld.daytrail.ui.screens.places
+﻿package com.hmilyld.daytrail.ui.screens.places
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -42,6 +42,7 @@ import com.hmilyld.daytrail.ui.appViewModelFactory
 import com.hmilyld.daytrail.ui.components.map.AmapView
 import com.hmilyld.daytrail.ui.components.map.MapUnavailablePlaceholder
 import com.hmilyld.daytrail.ui.components.map.rememberAmapAvailable
+import com.hmilyld.daytrail.ui.theme.TrailSpacing
 import kotlinx.coroutines.launch
 
 /**
@@ -129,7 +130,7 @@ fun PlacePickerScreen(
                     modifier =
                         Modifier
                             .fillMaxWidth()
-                            .padding(16.dp),
+                            .padding(TrailSpacing.lg),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     Text(

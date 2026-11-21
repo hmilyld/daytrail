@@ -54,6 +54,18 @@ class DiagnosticLogTest {
     }
 
     @Test
+    fun `control characters are escaped so the payload stays valid JSON`() {
+        val json =
+            DiagnosticLog.toJson(
+                events = listOf(event.copy(detail = "a\tb\r\u0001c")),
+                exportedAtMs = 0L,
+                zone = ZoneId.of("Asia/Shanghai"),
+            )
+
+        assertTrue(json.contains("a\\tb\\r\\u0001c"))
+    }
+
+    @Test
     fun `empty events produce an empty array`() {
         val json =
             DiagnosticLog.toJson(

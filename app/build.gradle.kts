@@ -32,6 +32,14 @@ val keystoreProperties: Properties =
  */
 fun amapKey(propertyName: String): String = localProperties.getProperty(propertyName, "").trim()
 
+/**
+ * 在线更新的 Release 仓库（`OWNER/REPO`）。
+ *
+ * 放在 gradle.properties 而不是写死在代码里：这是 fork 用户唯一需要改的地方，
+ * 而且改了之后 `UpdateChecker` 的主源与页面链接会一起跟着走。
+ */
+fun updateRepo(): String = providers.gradleProperty("app.updateRepo").getOrElse("").trim()
+
 android {
     namespace = "com.hmilyld.daytrail"
     compileSdk = 37
@@ -49,6 +57,12 @@ android {
         // 和地图 SDK 的 Android Key 不是一回事。缺失时为空串，
         // 界面会把「补全路线」按钮禁用。
         buildConfigField("String", "AMAP_WEB_KEY", "\"${amapKey("AMAP_WEB_KEY")}\"")
+
+        // 在线更新源。默认从 gradle.properties 的 app.updateRepo 读（OWNER/REPO），
+        // fork 的用户改成自己的仓库即可；留空则「检查更新」入口显示未配置，
+        // 不会去请求一个不存在的仓库。
+        buildConfigField("String", "UPDATE_REPO", "\"${updateRepo()}\"")
+        buildConfigField("String", "UPDATE_FEED_URL", "\"${providers.gradleProperty("app.updateFeedUrl").getOrElse("")}\"")
     }
 
     signingConfigs {
@@ -185,19 +199,14 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
-    implementation(libs.androidx.compose.material3.window.size)
-    implementation(libs.androidx.compose.material3.adaptive.navigation.suite)
     implementation(libs.androidx.compose.material.icons.extended)
 
     implementation(libs.androidx.navigation3.runtime)
     implementation(libs.androidx.navigation3.ui)
-    implementation(libs.androidx.adaptive.navigation3)
-    implementation(libs.androidx.adaptive.layout)
 
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
-    implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.androidx.datastore.preferences)
 
     implementation(libs.kotlinx.coroutines.android)

@@ -1,4 +1,4 @@
-package com.hmilyld.daytrail.ui.screens.places
+﻿package com.hmilyld.daytrail.ui.screens.places
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -52,6 +52,7 @@ import com.hmilyld.daytrail.ui.appViewModelFactory
 import com.hmilyld.daytrail.ui.components.map.AmapView
 import com.hmilyld.daytrail.ui.components.map.MapUnavailablePlaceholder
 import com.hmilyld.daytrail.ui.components.map.rememberAmapAvailable
+import com.hmilyld.daytrail.ui.theme.TrailSpacing
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
@@ -141,7 +142,7 @@ fun PlaceDetailScreen(
                     modifier =
                         Modifier
                             .align(Alignment.BottomStart)
-                            .padding(16.dp),
+                            .padding(TrailSpacing.lg),
                 )
             }
         }
@@ -214,7 +215,11 @@ fun PlaceDetailScreen(
                                     Modifier
                                         .fillMaxWidth()
                                         .heightIn(min = 48.dp),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                contentPadding =
+                                    PaddingValues(
+                                        horizontal = TrailSpacing.sm,
+                                        vertical = TrailSpacing.xs,
+                                    ),
                             ) {
                                 Text(
                                     text =
@@ -345,7 +350,9 @@ private fun PlaceInfoCard(
         shape = MaterialTheme.shapes.medium,
         modifier = modifier,
     ) {
-        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+        Column(
+            modifier = Modifier.padding(horizontal = TrailSpacing.md, vertical = TrailSpacing.sm),
+        ) {
             Text(
                 text = text,
                 style = MaterialTheme.typography.labelLarge,
@@ -361,8 +368,9 @@ private fun PlaceInfoCard(
                                 DistanceFormat.roundedMeters(suspect.distanceMeters),
                             ),
                         ),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.tertiary,
+                    style = MaterialTheme.typography.labelMedium,
+                    // 同 PlacesScreen：琥珀色文字在浅色背景上只有 2.0:1，不可用于文字
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             if (canMerge) {

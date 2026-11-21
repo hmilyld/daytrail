@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: 构建 / 单测 / lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # 仓库在 Windows 上维护，gradlew 可能没有可执行位
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Install Android SDK packages
+        run: |
+          SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          [ -x "$SDKMANAGER" ] || SDKMANAGER="$(command -v sdkmanager)"
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" "platforms;android-37" "build-tools;37.0.0" "platform-tools"
+
+      # 与 scripts/verify.ps1 等价：格式化、Debug 构建与单测、两套 lint、
+      # Release 单测（R8 开启后行为是否一致）
+      - name: Verify
+        run: >
+          ./gradlew
+          :app:spotlessCheck
+          :app:assembleDebug
+          :app:testDebugUnitTest
+          :app:lintDebug
+          :app:testReleaseUnitTest
+          :app:lintRelease
+          --stacktrace
+
+      - name: Upload reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports
+          path: |
+            app/build/reports/**
+            app/build/test-results/**
+          retention-days: 7
+
+  secrets:
+    name: 密钥扫描
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 必须扫全历史：删除文件不等于从历史里删除
+          fetch-depth: 0
+
+      # 用官方镜像而不是 gitleaks-action：后者对部分账号需要 license，
+      # 而这里只需要一个二进制的扫描能力。
+      - name: gitleaks
+        run: |
+          docker run --rm \
+            -v "$PWD:/repo" \
+            zricethezav/gitleaks:latest \
+            git /repo --config /repo/.gitleaks.toml --redact --verbose

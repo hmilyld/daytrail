@@ -9,9 +9,29 @@ import androidx.compose.ui.unit.sp
 /**
  * 排版：全部走 Material 3 的语义槽位，页面里不写裸 TextStyle。
  * 中文正文 15sp、行高 1.5，比 Material 默认的 14sp/20sp 更易读。
+ *
+ * **12 个槽位全部显式定义**：漏定义的槽位会静默回退到 M3 默认值
+ * （例如 headlineLarge 的 32sp/40sp 与本表其它层级不成比例），
+ * 一旦有人用了就会跳出体系，而且很难在 review 时发现。
  */
 internal val DayTrailTypography =
     Typography(
+        displayLarge =
+            TextStyle(
+                fontFamily = FontFamily.Default,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 54.sp,
+                lineHeight = 62.sp,
+                letterSpacing = (-1.0).sp,
+            ),
+        displayMedium =
+            TextStyle(
+                fontFamily = FontFamily.Default,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 44.sp,
+                lineHeight = 52.sp,
+                letterSpacing = (-0.8).sp,
+            ),
         displaySmall =
             TextStyle(
                 fontFamily = FontFamily.Default,
@@ -19,6 +39,14 @@ internal val DayTrailTypography =
                 fontSize = 36.sp,
                 lineHeight = 44.sp,
                 letterSpacing = (-0.6).sp,
+            ),
+        headlineLarge =
+            TextStyle(
+                fontFamily = FontFamily.Default,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 32.sp,
+                lineHeight = 40.sp,
+                letterSpacing = (-0.4).sp,
             ),
         headlineMedium =
             TextStyle(

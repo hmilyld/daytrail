@@ -2,6 +2,7 @@ package com.hmilyld.daytrail.ui.screens.today
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.hmilyld.daytrail.R
 import com.hmilyld.daytrail.core.DateLabels
 import com.hmilyld.daytrail.core.DayKey
 import com.hmilyld.daytrail.core.DistanceFormat
@@ -23,6 +24,7 @@ import com.hmilyld.daytrail.domain.TrackDisplay
 import com.hmilyld.daytrail.domain.TrackPointSample
 import com.hmilyld.daytrail.location.LocationFailureReason
 import com.hmilyld.daytrail.location.RecordingStateHolder
+import com.hmilyld.daytrail.ui.UiText
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -57,7 +59,7 @@ data class TodayUiState(
     /** 有标记的停留各自的质心。起终点落在这些位置上时不再单独画图钉。 */
     val stayCentroids: List<GeoPoint> = emptyList(),
     /** 地图的文字版概要，供 TalkBack 使用。 */
-    val accessibilitySummary: String = "",
+    val accessibilitySummary: List<UiText> = emptyList(),
     /** 定位异常原因。非 null 表示采集已停止，界面应提示并给重试入口。 */
     val locationIssue: LocationFailureReason? = null,
     /** 最近一个采样点（GCJ-02）。记录中地图图钉跟着它走。 */
@@ -179,12 +181,22 @@ class TodayViewModel(
             stayMarkers = stayPlan.markers,
             stayCentroids = stayPlan.centroids,
             accessibilitySummary =
-                if (points.isEmpty()) {
-                    ""
-                } else if (stays.isEmpty()) {
-                    "轨迹地图，今日共 ${points.size} 个采样点"
-                } else {
-                    "轨迹地图，今日 ${stays.size} 处停留，共 ${points.size} 个采样点"
+                when {
+                    points.isEmpty() -> emptyList()
+                    stays.isEmpty() ->
+                        listOf(
+                            UiText.Res(
+                                R.string.map_summary_today_points,
+                                listOf(points.size),
+                            ),
+                        )
+                    else ->
+                        listOf(
+                            UiText.Res(
+                                R.string.map_summary_today_both,
+                                listOf(stays.size, points.size),
+                            ),
+                        )
                 },
             startedAtLabel = startedAt?.let(DateLabels::time),
             stays =

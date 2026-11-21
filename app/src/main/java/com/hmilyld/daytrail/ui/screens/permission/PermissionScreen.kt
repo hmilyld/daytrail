@@ -1,4 +1,4 @@
-package com.hmilyld.daytrail.ui.screens.permission
+﻿package com.hmilyld.daytrail.ui.screens.permission
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -6,7 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -48,6 +48,7 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.hmilyld.daytrail.R
 import com.hmilyld.daytrail.permission.Permissions
 import com.hmilyld.daytrail.ui.theme.DayTrailTheme
+import com.hmilyld.daytrail.ui.theme.TrailSpacing
 
 /**
  * 权限自检页。
@@ -96,7 +97,7 @@ fun PermissionScreen(
         onOpenLocationSettings = { Permissions.openAppSettings(context) },
         onOpenLocationSwitch = { Permissions.openLocationSettings(context) },
         onOpenNotificationSettings = { Permissions.openNotificationSettings(context) },
-        onOpenBatterySettings = { Permissions.requestIgnoreBatteryOptimizations(context) },
+        onOpenBatterySettings = { Permissions.openBatteryOptimizationSettings(context) },
         onBack = onBack,
         modifier = modifier,
     )
@@ -148,7 +149,7 @@ private fun PermissionContent(
                     Modifier
                         .fillMaxSize()
                         .verticalScroll(rememberScrollState())
-                        .padding(horizontal = 16.dp),
+                        .padding(horizontal = TrailSpacing.lg),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Column(modifier = Modifier.widthIn(max = 840.dp)) {
@@ -156,7 +157,11 @@ private fun PermissionContent(
                         text = stringResource(R.string.permission_intro),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 8.dp, bottom = 12.dp),
+                        modifier =
+                            Modifier.padding(
+                                top = TrailSpacing.sm,
+                                bottom = TrailSpacing.md,
+                            ),
                     )
 
                     PermissionRow(
@@ -208,9 +213,9 @@ private fun PermissionContent(
                     Surface(
                         color = MaterialTheme.colorScheme.surfaceContainer,
                         shape = MaterialTheme.shapes.medium,
-                        modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+                        modifier = Modifier.fillMaxWidth().padding(top = TrailSpacing.lg),
                     ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
+                        Column(modifier = Modifier.padding(TrailSpacing.lg)) {
                             Text(
                                 text = stringResource(R.string.permission_tips_title),
                                 style = MaterialTheme.typography.titleSmall,
@@ -225,7 +230,7 @@ private fun PermissionContent(
                         }
                     }
 
-                    Column(modifier = Modifier.padding(bottom = 32.dp)) {}
+                    Column(modifier = Modifier.padding(bottom = TrailSpacing.xxl)) {}
                 }
             }
         }
@@ -245,10 +250,10 @@ private fun PermissionRow(
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainer,
         shape = MaterialTheme.shapes.medium,
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        modifier = Modifier.fillMaxWidth().padding(vertical = TrailSpacing.xs),
     ) {
         Row(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(TrailSpacing.lg),
             verticalAlignment = Alignment.Top,
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
@@ -313,7 +318,8 @@ private fun PermissionRow(
                 if (!ok) {
                     FilledTonalButton(
                         onClick = onAction,
-                        modifier = Modifier.padding(top = 4.dp).height(36.dp),
+                        // heightIn 而不是 height：字体放大 200% 时固定高度会把文字裁掉
+                        modifier = Modifier.padding(top = TrailSpacing.xs).heightIn(min = 40.dp),
                     ) {
                         Text(text = actionLabel, style = MaterialTheme.typography.labelMedium)
                     }
@@ -358,9 +364,9 @@ fun PermissionHealthSummary(
         modifier = modifier.fillMaxWidth(),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            modifier = Modifier.padding(horizontal = TrailSpacing.lg, vertical = TrailSpacing.md),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(TrailSpacing.md),
         ) {
             Icon(
                 imageVector =

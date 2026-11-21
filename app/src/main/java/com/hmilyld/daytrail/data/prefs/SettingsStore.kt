@@ -6,6 +6,8 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -96,6 +98,34 @@ class SettingsStore(
     val onboardingCompleted: Flow<Boolean> =
         context.dataStore.data.map { prefs -> prefs[KEY_ONBOARDING_COMPLETED] ?: false }
 
+    /**
+     * 用户是否已同意隐私政策，且已单独同意处理行踪轨迹（敏感个人信息）。
+     *
+     * 这是**记录功能与地图初始化**的前置条件：
+     * - `DayTrailApplication` 据此决定给高德 SDK 传 true 还是 false；
+     * - `DayTrailApp` 据此决定进引导页还是主界面（升级到引入同意的版本时，
+     *   老用户会重新走一遍引导）。
+     */
+    val privacyAccepted: Flow<Boolean> =
+        context.dataStore.data.map { prefs -> prefs[KEY_PRIVACY_ACCEPTED] ?: false }
+
+    /** 启动时自动检查更新。默认开：开源应用的更新提示越少打扰越好，但不能没有。 */
+    val autoUpdateCheck: Flow<Boolean> =
+        context.dataStore.data.map { prefs -> prefs[KEY_AUTO_UPDATE] ?: true }
+
+    /**
+     * 上次「尝试」检查更新的时间（不管成功与否都算）。
+     *
+     * 记的是尝试而不是成功：限流期间如果只在成功时记录，每次启动都会再撞一次。
+     * 网络不通的情况由 [UpdateChecker] 单独处理，不写这个值。
+     */
+    val lastUpdateCheckAt: Flow<Long> =
+        context.dataStore.data.map { prefs -> prefs[KEY_LAST_UPDATE_CHECK] ?: 0L }
+
+    /** 用户点过「稍后」的版本，之后不再自动提示。 */
+    val skippedUpdateVersion: Flow<String?> =
+        context.dataStore.data.map { prefs -> prefs[KEY_SKIPPED_UPDATE] }
+
     val themeMode: Flow<ThemeMode> =
         context.dataStore.data.map { prefs ->
             val ordinal = prefs[KEY_THEME_MODE] ?: ThemeMode.SYSTEM.ordinal
@@ -126,6 +156,28 @@ class SettingsStore(
         context.dataStore.edit { prefs -> prefs[KEY_ONBOARDING_COMPLETED] = completed }
     }
 
+    suspend fun setPrivacyAccepted(accepted: Boolean) {
+        context.dataStore.edit { prefs -> prefs[KEY_PRIVACY_ACCEPTED] = accepted }
+    }
+
+    suspend fun setAutoUpdateCheck(enabled: Boolean) {
+        context.dataStore.edit { prefs -> prefs[KEY_AUTO_UPDATE] = enabled }
+    }
+
+    suspend fun setLastUpdateCheckAt(timestampMs: Long) {
+        context.dataStore.edit { prefs -> prefs[KEY_LAST_UPDATE_CHECK] = timestampMs }
+    }
+
+    suspend fun setSkippedUpdateVersion(version: String?) {
+        context.dataStore.edit { prefs ->
+            if (version == null) {
+                prefs.remove(KEY_SKIPPED_UPDATE)
+            } else {
+                prefs[KEY_SKIPPED_UPDATE] = version
+            }
+        }
+    }
+
     suspend fun setThemeMode(mode: ThemeMode) {
         context.dataStore.edit { prefs -> prefs[KEY_THEME_MODE] = mode.ordinal }
     }
@@ -137,6 +189,10 @@ class SettingsStore(
         val KEY_PLACES_BACKFILL = booleanPreferencesKey("places_backfill_done")
         val KEY_RECORDING_INTENT = booleanPreferencesKey("recording_intent")
         val KEY_ONBOARDING_COMPLETED = booleanPreferencesKey("onboarding_completed")
+        val KEY_PRIVACY_ACCEPTED = booleanPreferencesKey("privacy_accepted")
+        val KEY_AUTO_UPDATE = booleanPreferencesKey("auto_update_check")
+        val KEY_LAST_UPDATE_CHECK = longPreferencesKey("last_update_check_at")
+        val KEY_SKIPPED_UPDATE = stringPreferencesKey("skipped_update_version")
         val KEY_THEME_MODE = intPreferencesKey("theme_mode")
     }
 }

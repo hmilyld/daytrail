@@ -3,32 +3,54 @@
 build/
 !gradle/wrapper/gradle-wrapper.jar
 .kotlin/
+local.defaults.properties
 
-# Local config (never commit)
-local.properties
-keystore.properties
-*.jks
-*.keystore
-# 例外：debug 签名密钥固定提交，保证任何机器上 debug SHA1 一致
-!app/keystore/debug.jks
-
-# IDE
-.idea/
-*.iml
-.DS_Store
-
-# Artifacts
+# 构建产物
 dist/
+app/release/
 *.apk
 *.aab
 *.ap_
 *.dex
+*.hprof
+*.jfr
+captures/
 
-# Logs
+# 本地配置（绝不提交）
+local.properties
+keystore.properties
+*.jks
+*.keystore
+*.p12
+*.pem
+*.key
+*.cer
+*.crt
+*.env
+.env.*
+# 例外：debug 签名密钥固定提交，保证任何机器上 debug SHA1 一致
+!app/keystore/debug.jks
+!keystore.properties.example
+!local.properties.example
+
+# 密钥扫描用到的本地文件
+secrets/
+passwords.txt
+mailmap.txt
+expressions.txt
+
+# IDE
+.idea/
+*.iml
+.fleet/
+.DS_Store
+
+# 日志与证据
 *.log
-
-# Evidence (screenshots, adb dumps)
 evidence/
+
+# 本地 AI 代理说明（含本机路径与签名细节，不随仓库发布）
+AGENTS.md
 
 # OS
 Thumbs.db

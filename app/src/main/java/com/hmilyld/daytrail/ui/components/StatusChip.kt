@@ -1,4 +1,4 @@
-package com.hmilyld.daytrail.ui.components
+﻿package com.hmilyld.daytrail.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -79,7 +79,7 @@ fun RecordingStatusChip(
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(TrailSpacing.sm),
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            modifier = Modifier.padding(horizontal = TrailSpacing.md, vertical = 6.dp),
         ) {
             Box(
                 modifier =

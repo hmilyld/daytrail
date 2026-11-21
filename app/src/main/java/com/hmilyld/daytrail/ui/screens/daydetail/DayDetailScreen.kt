@@ -1,4 +1,4 @@
-package com.hmilyld.daytrail.ui.screens.daydetail
+﻿package com.hmilyld.daytrail.ui.screens.daydetail
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -25,6 +26,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -49,6 +51,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.amap.api.maps.AMap
 import com.hmilyld.daytrail.AppContainer
 import com.hmilyld.daytrail.R
+import com.hmilyld.daytrail.ui.UiText
 import com.hmilyld.daytrail.ui.appViewModelFactory
 import com.hmilyld.daytrail.ui.components.EmptyState
 import com.hmilyld.daytrail.ui.components.MapAccessibilityOverlay
@@ -56,11 +59,14 @@ import com.hmilyld.daytrail.ui.components.Metric
 import com.hmilyld.daytrail.ui.components.MetricRow
 import com.hmilyld.daytrail.ui.components.TimelineRow
 import com.hmilyld.daytrail.ui.components.TimelineTone
+import com.hmilyld.daytrail.ui.components.immersiveSafePadding
 import com.hmilyld.daytrail.ui.components.map.AmapView
 import com.hmilyld.daytrail.ui.components.map.MapControlButton
 import com.hmilyld.daytrail.ui.components.map.MapUnavailablePlaceholder
 import com.hmilyld.daytrail.ui.components.map.TrackOverlay
 import com.hmilyld.daytrail.ui.components.map.rememberAmapAvailable
+import com.hmilyld.daytrail.ui.resolve
+import com.hmilyld.daytrail.ui.resolveJoined
 import com.hmilyld.daytrail.ui.theme.DayTrailTheme
 import com.hmilyld.daytrail.ui.theme.TrailSpacing
 
@@ -101,9 +107,9 @@ fun DayDetailScreen(
 private fun DayDetailContent(
     state: DayDetailUiState,
     onBack: () -> Unit,
+    modifier: Modifier = Modifier,
     onCorrectRoute: () -> Unit = {},
     onRestoreRoute: () -> Unit = {},
-    modifier: Modifier = Modifier,
 ) {
     val mapAvailable = rememberAmapAvailable()
     var amap by remember { mutableStateOf<AMap?>(null) }
@@ -114,6 +120,10 @@ private fun DayDetailContent(
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
+        // 全屏时不给内容加安全区：地图要铺到状态栏与手势条下面，
+        // 浮层用 immersiveSafePadding 自己避让。
+        contentWindowInsets =
+            if (expanded) WindowInsets(0, 0, 0, 0) else ScaffoldDefaults.contentWindowInsets,
         topBar = {
             if (!expanded) {
                 TopAppBar(
@@ -256,10 +266,14 @@ private fun TrackMapPane(
                 sampleDots = state.routeOverride == null,
             )
             MapAccessibilityOverlay(
-                text = state.accessibilitySummary,
+                text = state.accessibilitySummary.resolveJoined(R.string.list_separator),
                 modifier =
                     Modifier
-                        .align(Alignment.BottomStart)
+                        // 高德 logo 与版权固定在左下角，浮层压上去会违反
+                        // SDK 条款（不得遮挡 logo）。右下角在本项目未启用
+                        // 比例尺/缩放控件，不会与 SDK 元素重叠。
+                        .align(Alignment.BottomEnd)
+                        .immersiveSafePadding(expanded)
                         .padding(TrailSpacing.md),
             )
 
@@ -272,12 +286,13 @@ private fun TrackMapPane(
                     modifier =
                         Modifier
                             .align(Alignment.TopStart)
+                            .immersiveSafePadding(expanded)
                             .padding(TrailSpacing.md),
                 ) {
                     Text(
                         text = state.title,
                         style = MaterialTheme.typography.labelLarge,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        modifier = Modifier.padding(horizontal = TrailSpacing.md, vertical = 6.dp),
                     )
                 }
             }
@@ -295,6 +310,7 @@ private fun TrackMapPane(
             modifier =
                 Modifier
                     .align(Alignment.TopEnd)
+                    .immersiveSafePadding(expanded)
                     .padding(TrailSpacing.md),
         )
     }
@@ -367,8 +383,8 @@ private fun TimelinePane(
                 itemsIndexed(items = state.entries) { index, entry ->
                     TimelineRow(
                         time = entry.time,
-                        title = entry.title,
-                        detail = entry.detail,
+                        title = entry.title.resolve(),
+                        detail = entry.detail?.resolve().orEmpty(),
                         tone = entry.kind.toTone(),
                         showConnector = index != state.entries.lastIndex,
                     )
@@ -452,7 +468,10 @@ private fun CorrectionBar(
                 else -> {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = stringResource(R.string.day_detail_correct_route_hint),
+                            // 具体原因（点太稀疏 / 没有驾车段）比通用提示更有用
+                            text =
+                                state.routeError?.resolve()
+                                    ?: stringResource(R.string.day_detail_correct_route_hint),
                             style = MaterialTheme.typography.labelSmall,
                             color =
                                 if (state.routeError != null) {
@@ -500,10 +519,28 @@ private fun DayDetailPreview() {
                     timeRange = "08:12 – 18:02",
                     entries =
                         listOf(
-                            TimelineEntry("08:12", "开始记录", "", TimelineKind.START),
-                            TimelineEntry("09:41", "公司", "停留 18 分钟", TimelineKind.STOP),
-                            TimelineEntry("13:04", "数据缺失", "约 40 分钟无采样", TimelineKind.GAP),
-                            TimelineEntry("18:02", "结束记录", "", TimelineKind.END),
+                            TimelineEntry(
+                                time = "08:12",
+                                title = UiText.Res(R.string.timeline_start),
+                                kind = TimelineKind.START,
+                            ),
+                            TimelineEntry(
+                                time = "09:41",
+                                title = UiText.Raw("公司"),
+                                detail = UiText.Res(R.string.timeline_stay_minutes, listOf(18)),
+                                kind = TimelineKind.STOP,
+                            ),
+                            TimelineEntry(
+                                time = "13:04",
+                                title = UiText.Res(R.string.timeline_gap_title),
+                                detail = UiText.Res(R.string.timeline_gap_detail, listOf(40)),
+                                kind = TimelineKind.GAP,
+                            ),
+                            TimelineEntry(
+                                time = "18:02",
+                                title = UiText.Res(R.string.timeline_end),
+                                kind = TimelineKind.END,
+                            ),
                         ),
                     loading = false,
                 ),

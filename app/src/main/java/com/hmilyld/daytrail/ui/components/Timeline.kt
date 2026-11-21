@@ -1,4 +1,4 @@
-package com.hmilyld.daytrail.ui.components
+﻿package com.hmilyld.daytrail.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -120,7 +120,7 @@ fun TimelineRow(
             modifier =
                 Modifier
                     .weight(1f)
-                    .padding(start = TrailSpacing.sm, bottom = 4.dp),
+                    .padding(start = TrailSpacing.sm, bottom = TrailSpacing.xs),
             verticalArrangement = Arrangement.spacedBy(1.dp),
         ) {
             Text(

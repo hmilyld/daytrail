@@ -47,18 +47,26 @@ class ReverseGeocodeClient(
             }
 
             runCatching {
-                val location = "${point.longitude.format()},${point.latitude.format()}"
+                // 坐标放请求体、只有 Key 留在查询串：
+                // GET 会把「Key + 精确坐标」整条写进 URL，任何系统代理日志、
+                // 抓包工具、企业 MDM 都能原样看到。高德 Web 服务支持 POST。
+                val body =
+                    "location=${point.longitude.format()},${point.latitude.format()}" +
+                        "&extensions=all&radius=200"
                 val connection =
-                    (
-                        URL("$url?key=$apiKey&location=$location&extensions=all&radius=200")
-                            .openConnection() as HttpURLConnection
-                    ).apply {
-                        requestMethod = "GET"
+                    (URL("$url?key=$apiKey").openConnection() as HttpURLConnection).apply {
+                        requestMethod = "POST"
+                        doOutput = true
                         connectTimeout = CONNECT_TIMEOUT_MS
                         readTimeout = READ_TIMEOUT_MS
+                        setRequestProperty(
+                            "Content-Type",
+                            "application/x-www-form-urlencoded; charset=utf-8",
+                        )
                     }
 
                 try {
+                    connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
                     val code = connection.responseCode
                     val text =
                         (if (code in 200..299) connection.inputStream else connection.errorStream)

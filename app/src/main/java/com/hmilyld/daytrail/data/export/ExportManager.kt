@@ -2,6 +2,7 @@ package com.hmilyld.daytrail.data.export
 
 import android.content.Context
 import android.net.Uri
+import com.hmilyld.daytrail.BuildConfig
 import com.hmilyld.daytrail.core.DayKey
 import com.hmilyld.daytrail.core.DayKeys
 import com.hmilyld.daytrail.core.GeoPoint
@@ -128,7 +129,11 @@ class ExportManager(
 
                 val content =
                     when (format) {
-                        ExportFormat.GEOJSON -> TrackExport.toGeoJson(days)
+                        ExportFormat.GEOJSON ->
+                            TrackExport.toGeoJson(
+                                days = days,
+                                generator = "DayTrail ${BuildConfig.VERSION_NAME}",
+                            )
                         ExportFormat.GPX -> TrackExport.toGpx(days)
                     }
 

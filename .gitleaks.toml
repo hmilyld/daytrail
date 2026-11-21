@@ -1,0 +1,27 @@
+# gitleaks 配置：拦截密钥泄露，同时避免已知的误报。
+#
+# 用法（提交前 / CI）：
+#   gitleaks git . --redact -v        # 扫全历史
+#   gitleaks dir . --redact -v        # 扫工作区
+#
+# 注意：`dir` 模式会读取被 .gitignore 忽略的 local.properties，而那里**本来**
+# 就有真实 Key。所以在本地跑 `dir` 时请先把它移走，或者只对干净 clone 跑：
+#   git clone <repo> /tmp/scan && gitleaks dir /tmp/scan --redact -v
+
+title = "DayTrail secret scan"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "已知且无害的匹配：Room schema 里的 32 位 identityHash、示例配置里的占位符"
+paths = [
+    '''app/schemas/.*\.json$''',
+    '''keystore\.properties\.example$''',
+    '''local\.properties\.example$''',
+]
+regexes = [
+    '''INSERT OR REPLACE INTO room_master_table''',
+    '''<YOUR_[A-Z_]+>''',
+    '''your-keystore-password''',
+]

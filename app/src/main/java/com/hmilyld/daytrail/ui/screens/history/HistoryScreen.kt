@@ -1,4 +1,4 @@
-package com.hmilyld.daytrail.ui.screens.history
+﻿package com.hmilyld.daytrail.ui.screens.history
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,7 +28,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.hmilyld.daytrail.AppContainer
@@ -199,14 +198,14 @@ private fun MonthSummaryCard(state: HistoryUiState) {
                     text = stringResource(R.string.unit_km),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 4.dp, bottom = 8.dp),
+                    modifier = Modifier.padding(start = TrailSpacing.xs, bottom = TrailSpacing.sm),
                 )
                 Spacer(modifier = Modifier.weight(1f))
                 Text(
                     text = stringResource(R.string.history_active_days, state.activeDays),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 8.dp),
+                    modifier = Modifier.padding(bottom = TrailSpacing.sm),
                 )
             }
 

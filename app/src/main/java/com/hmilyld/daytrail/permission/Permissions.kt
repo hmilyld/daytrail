@@ -141,27 +141,22 @@ object Permissions {
     }
 
     /**
-     * 申请忽略电池优化。
+     * 跳「电池优化」列表页，由用户自己找到本应用并设为「不限制」。
      *
-     * 用 `ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` 带包名直接弹系统对话框，
-     * 比跳列表页少一步操作。
+     * **不**用 `ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`：那个 action 需要
+     * `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` 权限，而 Google Play 对该权限有
+     * 严格的白名单限制（仅闹钟、VoIP 等类别），普通应用申请会被拒。
+     * 多一次点击，换来可上架与可解释性。
+     *
+     * 读取状态用 [isIgnoringBatteryOptimizations]，那个不需要该权限。
      */
-    fun requestIgnoreBatteryOptimizations(context: Context) {
-        val intent =
-            Intent(
-                Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                Uri.parse("package:${context.packageName}"),
-            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        runCatching { context.startActivity(intent) }
-            .onFailure {
-                // 部分 ROM 不支持该 action，退化为电池优化列表
-                runCatching {
-                    context.startActivity(
-                        Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                    )
-                }
-            }
+    fun openBatteryOptimizationSettings(context: Context) {
+        runCatching {
+            context.startActivity(
+                Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        }.onFailure { openAppSettings(context) }
     }
 
     /**

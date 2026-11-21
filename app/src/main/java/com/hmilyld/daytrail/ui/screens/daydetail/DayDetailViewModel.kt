@@ -2,6 +2,8 @@ package com.hmilyld.daytrail.ui.screens.daydetail
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.hmilyld.daytrail.R
+import com.hmilyld.daytrail.core.DateLabels
 import com.hmilyld.daytrail.core.DayKeys
 import com.hmilyld.daytrail.core.DistanceFormat
 import com.hmilyld.daytrail.core.GeoPoint
@@ -20,6 +22,7 @@ import com.hmilyld.daytrail.domain.StayMarkers
 import com.hmilyld.daytrail.domain.TrackCorrection
 import com.hmilyld.daytrail.domain.TrackDisplay
 import com.hmilyld.daytrail.domain.TrackPointSample
+import com.hmilyld.daytrail.ui.UiText
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -40,9 +43,9 @@ enum class TimelineKind {
 /** 时间轴的一个节点。 */
 data class TimelineEntry(
     val time: String,
-    val title: String,
-    val detail: String,
+    val title: UiText,
     val kind: TimelineKind,
+    val detail: UiText? = null,
     /** 排序用的原始时间戳。不显示，只用于正确排序。 */
     val sortKeyMs: Long = 0L,
 )
@@ -64,7 +67,7 @@ data class DayDetailUiState(
     /** 有标记的停留各自的质心。起终点落在这些位置上时不再单独画图钉。 */
     val stayCentroids: List<GeoPoint> = emptyList(),
     /** 地图的文字版行程，供 TalkBack 使用。 */
-    val accessibilitySummary: String = "",
+    val accessibilitySummary: List<UiText> = emptyList(),
     val loading: Boolean = true,
     /** 有没有可补全的驾车段（且已配置 Key）。 */
     val canCorrectRoute: Boolean = false,
@@ -73,7 +76,7 @@ data class DayDetailUiState(
     /** 已保存的纠偏结果。非 null 时地图画的是它。 */
     val routeOverride: RouteOverride? = null,
     /** 纠偏失败的原因。 */
-    val routeError: String? = null,
+    val routeError: UiText? = null,
 ) {
     val hasTrack: Boolean get() = trackSegments.any { it.size >= 2 }
 }
@@ -164,7 +167,7 @@ class DayDetailViewModel(
                         _uiState.value =
                             _uiState.value.copy(
                                 correctingRoute = false,
-                                routeError = "这一天没有可补全的驾车段",
+                                routeError = UiText.Res(R.string.day_detail_route_no_segments),
                             )
                         return@launch
                     }
@@ -180,7 +183,10 @@ class DayDetailViewModel(
                             _uiState.value =
                                 _uiState.value.copy(
                                     correctingRoute = false,
-                                    routeError = error.message ?: "补全失败",
+                                    routeError =
+                                        error.message
+                                            ?.let { UiText.Raw(it) }
+                                            ?: UiText.Res(R.string.day_detail_route_failed),
                                 )
                             return@launch
                         }
@@ -193,7 +199,7 @@ class DayDetailViewModel(
                 _uiState.value =
                     _uiState.value.copy(
                         correctingRoute = false,
-                        routeError = "这段轨迹没能匹配到路网",
+                        routeError = UiText.Res(R.string.day_detail_route_no_match),
                     )
                 return@launch
             }
@@ -250,8 +256,7 @@ class DayDetailViewModel(
             entries +=
                 TimelineEntry(
                     time = formatTime(start, zone),
-                    title = "开始记录",
-                    detail = "",
+                    title = UiText.Res(R.string.timeline_start),
                     kind = TimelineKind.START,
                     sortKeyMs = start,
                 )
@@ -262,7 +267,11 @@ class DayDetailViewModel(
                 TimelineEntry(
                     time = formatTime(stay.startMs, zone),
                     title = stay.displayTitle(places),
-                    detail = "停留 ${(stay.endMs - stay.startMs) / 60_000} 分钟",
+                    detail =
+                        UiText.Res(
+                            R.string.timeline_stay_minutes,
+                            listOf((stay.endMs - stay.startMs) / 60_000),
+                        ),
                     kind = TimelineKind.STOP,
                     sortKeyMs = stay.startMs,
                 )
@@ -272,8 +281,12 @@ class DayDetailViewModel(
             entries +=
                 TimelineEntry(
                     time = formatTime(gap.startMs, zone),
-                    title = "这段时间没有记录",
-                    detail = "约 ${(gap.endMs - gap.startMs) / 60_000} 分钟没有采样点",
+                    title = UiText.Res(R.string.timeline_gap_title),
+                    detail =
+                        UiText.Res(
+                            R.string.timeline_gap_detail,
+                            listOf((gap.endMs - gap.startMs) / 60_000),
+                        ),
                     kind = TimelineKind.GAP,
                     sortKeyMs = gap.startMs,
                 )
@@ -283,8 +296,7 @@ class DayDetailViewModel(
             entries +=
                 TimelineEntry(
                     time = formatTime(end, zone),
-                    title = "结束记录",
-                    detail = "",
+                    title = UiText.Res(R.string.timeline_end),
                     kind = TimelineKind.END,
                     sortKeyMs = end,
                 )
@@ -350,10 +362,11 @@ class DayDetailViewModel(
      * 名字来自 place 表，跨天复用：同一天里两段停留只要落在同一个地点，
      * 标题就一样。
      */
-    private fun StaySegmentEntity.displayTitle(places: List<PlaceSummary>): String =
-        placeId
-            ?.let { id -> places.firstOrNull { it.place.id == id }?.place?.label }
-            ?: "停留"
+    private fun StaySegmentEntity.displayTitle(places: List<PlaceSummary>): UiText {
+        val label =
+            placeId?.let { id -> places.firstOrNull { it.place.id == id }?.place?.label }
+        return if (label.isNullOrBlank()) UiText.Res(R.string.timeline_stay) else UiText.Raw(label)
+    }
 
     /**
      * 地图的文字版行程。
@@ -364,15 +377,15 @@ class DayDetailViewModel(
         points: List<GeoPoint>,
         stays: List<StaySegmentEntity>,
         segmentCount: Int,
-    ): String {
-        if (points.isEmpty()) return ""
-        val parts = mutableListOf("轨迹地图")
-        parts += "${stays.size} 处停留"
-        parts += "${points.size} 个采样点"
+    ): List<UiText> {
+        if (points.isEmpty()) return emptyList()
+        val parts = mutableListOf<UiText>(UiText.Res(R.string.map_summary_title))
+        parts += UiText.Res(R.string.map_summary_stays, listOf(stays.size))
+        parts += UiText.Res(R.string.map_summary_points, listOf(points.size))
         if (segmentCount > 1) {
-            parts += "分为 $segmentCount 段"
+            parts += UiText.Res(R.string.map_summary_segments, listOf(segmentCount))
         }
-        return parts.joinToString("，")
+        return parts
     }
 
     private fun kindOrder(kind: TimelineKind): Int =
@@ -393,8 +406,9 @@ class DayDetailViewModel(
 
     private fun formatTitle(dateKey: String): String {
         val date = runCatching { LocalDate.parse(dateKey) }.getOrNull() ?: return dateKey
-        val weekdays = arrayOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")
-        return "${date.monthValue}月${date.dayOfMonth}日 ${weekdays[date.dayOfWeek.value - 1]}"
+        // 走 DateLabels：星期由 DateTimeFormatter 本地化输出，
+        // 不再在 Kotlin 里手写「周一…周日」数组（那也做不到换语言）。
+        return DateLabels.full(date)
     }
 
     /** 里程格式化。统一走 [DistanceFormat]。 */

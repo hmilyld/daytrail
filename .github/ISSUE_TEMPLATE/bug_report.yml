@@ -1,0 +1,76 @@
+name: Bug 报告
+description: 记录错、地图不显示、导入导出异常等
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        提交前请先看 **我的 → 诊断日志**：
+        它能告诉你当时处于哪个采样档位、有没有被系统杀掉、网络探针的结果是什么。
+        诊断日志**不含坐标**，可以放心附上。
+
+        安全漏洞请**不要**在这里报，见 SECURITY.md。
+  - type: input
+    id: version
+    attributes:
+      label: 应用版本
+      description: 我的 → 关于 里的「版本」一行，例如 0.3.2 (5)
+      placeholder: "0.3.2 (5)"
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: 机型与系统
+      description: 例如 Pixel 8 / Android 16，或 小米 14 / HyperOS 2
+      placeholder: "Pixel 8 / Android 16"
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: 问题出现在哪一块
+      options:
+        - 记录（采不到点 / 里程不对 / 服务被杀）
+        - 地图（空白 / 残影 / 手势失灵 / 定位点不显示）
+        - 历史与单日详情
+        - 行程
+        - 地点（识别 / 命名 / 合并）
+        - 导出
+        - 导入
+        - 在线更新
+        - 其他
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 越具体越好。涉及位置的请**虚构坐标**，不要贴真实轨迹。
+      placeholder: |
+        1. 点「开始记录」
+        2. 走动 10 分钟
+        3. 今日页显示 0 个点
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 诊断日志（可选）
+      description: 我的 → 诊断日志 → 导出，把 JSON 内容贴在这里。不含坐标。
+      render: json
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 确认
+      options:
+        - label: 我已在最新版本上复现
+          required: false
+        - label: 我已确认贴出的内容不含真实坐标、地址等个人信息
+          required: true

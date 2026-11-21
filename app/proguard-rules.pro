@@ -6,6 +6,20 @@
 -dontwarn com.autonavi.**
 -dontwarn com.loc.**
 
+# release 包剥离调试日志
+#
+# 不依赖 AGP 默认配置：不同 AGP 版本附带的 proguard-android*.txt 是否包含
+# Log 的 assumenosideeffects 并不一致，显式声明才可靠。保留 w/e，
+# 让真正的异常仍在 logcat 可见（不含坐标，见 DiagnosticLog 的设计）。
+-assumenosideeffects class android.util.Log {
+    public static *** v(...);
+    public static *** d(...);
+    public static *** i(...);
+}
+
+# 隐藏源文件名，减少包内的路径指纹
+-renamesourcefileattribute SourceFile
+
 # kotlinx.serialization
 -keepattributes *Annotation*, InnerClasses
 -dontnote kotlinx.serialization.**

@@ -78,6 +78,7 @@ import com.hmilyld.daytrail.ui.components.RecordingStatusChip
 import com.hmilyld.daytrail.ui.components.SectionCard
 import com.hmilyld.daytrail.ui.components.TimelineRow
 import com.hmilyld.daytrail.ui.components.TimelineTone
+import com.hmilyld.daytrail.ui.components.immersiveSafePadding
 import com.hmilyld.daytrail.ui.components.map.AmapView
 import com.hmilyld.daytrail.ui.components.map.CurrentLocationMarker
 import com.hmilyld.daytrail.ui.components.map.LocateButton
@@ -86,6 +87,7 @@ import com.hmilyld.daytrail.ui.components.map.MapUnavailablePlaceholder
 import com.hmilyld.daytrail.ui.components.map.TrackOverlay
 import com.hmilyld.daytrail.ui.components.map.rememberAmapAvailable
 import com.hmilyld.daytrail.ui.components.trailSegmentedColors
+import com.hmilyld.daytrail.ui.resolveJoined
 import com.hmilyld.daytrail.ui.theme.DayTrailTheme
 import com.hmilyld.daytrail.ui.theme.TrailSpacing
 
@@ -208,6 +210,7 @@ private fun TodayContent(
                     modifier =
                         Modifier
                             .align(Alignment.TopEnd)
+                            .immersiveSafePadding(expanded)
                             .padding(TrailSpacing.md),
                     verticalArrangement = Arrangement.spacedBy(TrailSpacing.sm),
                 ) {
@@ -241,6 +244,7 @@ private fun TodayContent(
                         modifier =
                             Modifier
                                 .align(Alignment.TopStart)
+                                .immersiveSafePadding(expanded)
                                 .padding(TrailSpacing.md)
                                 .widthIn(max = OVERLAY_NOTICE_MAX_WIDTH),
                         verticalArrangement = Arrangement.spacedBy(TrailSpacing.sm),
@@ -272,10 +276,14 @@ private fun TodayContent(
 
                 // 地图对读屏不可用，必须给等价文字
                 MapAccessibilityOverlay(
-                    text = state.accessibilitySummary,
+                    text = state.accessibilitySummary.resolveJoined(R.string.list_separator),
                     modifier =
                         Modifier
-                            .align(Alignment.BottomStart)
+                            // 高德 logo 与版权固定在左下角，浮层压上去会违反
+                            // SDK 条款（不得遮挡 logo）。右下角在本项目未启用
+                            // 比例尺/缩放控件，不会与 SDK 元素重叠。
+                            .align(Alignment.BottomEnd)
+                            .immersiveSafePadding(expanded)
                             .padding(TrailSpacing.md),
                 )
 

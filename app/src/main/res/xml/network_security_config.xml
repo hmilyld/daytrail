@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    网络安全策略。
+
+    默认禁止明文：本项目的两个 Web API（逆地理编码、轨迹纠偏）与地图瓦片
+    全部走 https，不允许任何未声明的明文流量。
+
+    例外只开给高德域名，原因是 3dmap SDK 内部仍保留 http 端点
+    （实测 jar 内的字符串：apilocate / cgicol / m5 / mpsapi / restapi /
+    restdk / wprd0*.is.autonavi.com 等），全局禁明文会导致瓦片或上报失败，
+    表现为地图空白且无任何日志。例外收窄到域名粒度，禁止再放宽到 base-config。
+
+    信任锚只留系统证书：targetSdk >= 24 的应用本就不信任用户安装的 CA，
+    这里显式写明，避免以后有人为了抓包把它改成 "user"。
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">amap.com</domain>
+        <domain includeSubdomains="true">autonavi.com</domain>
+    </domain-config>
+</network-security-config>

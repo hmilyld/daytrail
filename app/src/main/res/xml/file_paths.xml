@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    FileProvider 只暴露缓存目录下的 updates/。
+    更新包下载到这里，通过 content:// 交给系统安装器读取；
+    不暴露外部存储，也不暴露应用私有数据目录。
+-->
+<paths>
+    <cache-path
+        name="updates"
+        path="updates/" />
+</paths>

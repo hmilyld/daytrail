@@ -550,14 +550,13 @@ class RecordingService : Service() {
                     // 采样间隔本来就是 1 小时。既不能给界面打 fixStale，
                     // 也不能把通知改成「正在获取定位」——那会把「已休眠」的提示顶掉，
                     // 而且之后不会再刷回来（休眠中不更新通知）。
-                    if (tempo.tier == TempoTier.SLEEP) {
-                        appContainer.recordingState.setFixStale(false)
-                        continue
-                    }
-
-                    val silentMs = System.currentTimeMillis() - lastFixAtMs
-                    appContainer.recordingState.setFixStale(silentMs >= STALE_AFTER_MS)
-                    if (silentMs >= NO_FIX_NOTICE_MS) {
+                    val decision =
+                        FixSilence.evaluate(
+                            silentMs = System.currentTimeMillis() - lastFixAtMs,
+                            sleeping = tempo.tier == TempoTier.SLEEP,
+                        )
+                    appContainer.recordingState.setFixStale(decision.markStale)
+                    if (decision.switchNotice) {
                         notify(getString(R.string.record_waiting_location))
                     }
                 }
@@ -720,18 +719,6 @@ class RecordingService : Service() {
 
         /** 看门狗轮询间隔。 */
         private const val WATCHDOG_TICK_MS = 60_000L
-
-        /** 超过这么久没有回调，就把通知切回「正在获取定位」。 */
-        private const val NO_FIX_NOTICE_MS = 10 * 60_000L
-
-        /**
-         * 超过这么久没有回调，界面上给一句「暂时没有新的定位」。
-         *
-         * 比通知的 10 分钟更保守：静止档本身就是 10 分钟一个点，
-         * 10 分钟没点可能只是刚好跨过一个周期。15 分钟说明至少漏了一轮，
-         * 这时提示才对用户有信息量，否则就是在健康状态下闪来闪去。
-         */
-        private const val STALE_AFTER_MS = 15 * 60_000L
 
         const val ACTION_START = "com.hmilyld.daytrail.action.START"
         const val ACTION_PAUSE = "com.hmilyld.daytrail.action.PAUSE"

@@ -1,4 +1,4 @@
-package com.hmilyld.daytrail.ui.screens.trip
+﻿package com.hmilyld.daytrail.ui.screens.trip
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -30,6 +30,7 @@ import com.hmilyld.daytrail.ui.components.map.AmapView
 import com.hmilyld.daytrail.ui.components.map.MapUnavailablePlaceholder
 import com.hmilyld.daytrail.ui.components.map.rememberAmapAvailable
 import com.hmilyld.daytrail.ui.theme.DayTrailTheme
+import com.hmilyld.daytrail.ui.theme.TrailSpacing
 
 /**
  * 行程详情：一次出差覆盖多天。
@@ -91,7 +92,7 @@ private fun TripDetailContent(
     ) { innerPadding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(innerPadding),
-            contentPadding = PaddingValues(bottom = 24.dp),
+            contentPadding = PaddingValues(bottom = TrailSpacing.xl),
         ) {
             item {
                 if (rememberAmapAvailable()) {
@@ -121,7 +122,7 @@ private fun TripDetailContent(
                             text = summary,
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.padding(16.dp),
+                            modifier = Modifier.padding(TrailSpacing.lg),
                         )
                     }
                 }

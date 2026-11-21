@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 安全漏洞
+    url: https://github.com/hmilyld/daytrail/security/advisories/new
+    about: 请不要公开提交安全问题，用私密通道。
+  - name: 使用与构建问题
+    url: https://github.com/hmilyld/daytrail/blob/main/docs/DEVELOPMENT.md
+    about: 先看开发文档里的踩坑记录，很多问题已有答案。

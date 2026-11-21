@@ -1,0 +1,16 @@
+# 复制为 local.properties 后填入真实值。该文件永远不进入 Git。
+#
+# Windows 路径注意：反斜杠与盘符冒号都要转义，否则 lint 的 PropertyEscape
+# 规则会报 error 导致构建失败。示例：
+#   sdk.dir=C\:\\Users\\<USER>\\AppData\\Local\\Android\\Sdk
+
+sdk.dir=<PATH_TO_ANDROID_SDK>
+
+# 高德开放平台 Key（https://console.amap.com/dev/key）。
+# 必须分别申请三个 Key：
+#   1. Android 平台 SDK —— 绑定 release 包名 + release SHA1
+#   2. Android 平台 SDK —— 绑定 debug 包名（.debug 后缀）+ debug SHA1
+#   3. Web 服务 Key —— 轨迹纠偏与地点名反查，不能用于地图 SDK
+AMAP_KEY_DEBUG=<YOUR_AMAP_ANDROID_KEY_DEBUG>
+AMAP_KEY_RELEASE=<YOUR_AMAP_ANDROID_KEY_RELEASE>
+AMAP_WEB_KEY=<YOUR_AMAP_WEB_SERVICE_KEY>

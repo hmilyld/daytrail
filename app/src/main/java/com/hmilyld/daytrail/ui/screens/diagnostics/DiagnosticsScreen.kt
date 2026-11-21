@@ -1,6 +1,5 @@
-package com.hmilyld.daytrail.ui.screens.diagnostics
+﻿package com.hmilyld.daytrail.ui.screens.diagnostics
 
-import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -16,9 +15,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.IosShare
-import androidx.compose.material.icons.outlined.ReceiptLong
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -26,6 +25,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -47,6 +48,7 @@ import com.hmilyld.daytrail.R
 import com.hmilyld.daytrail.data.db.entity.DiagnosticEventEntity
 import com.hmilyld.daytrail.ui.appViewModelFactory
 import com.hmilyld.daytrail.ui.components.EmptyState
+import com.hmilyld.daytrail.ui.theme.TrailSpacing
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -72,6 +74,7 @@ fun DiagnosticsScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var showClear by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
 
     val exportFailed = stringResource(R.string.diagnostics_export_failed)
 
@@ -92,12 +95,13 @@ fun DiagnosticsScreen(
                             } ?: error("无法打开目标文件")
                         }.isSuccess
                     }
-                if (!ok) Toast.makeText(context, exportFailed, Toast.LENGTH_SHORT).show()
+                if (!ok) scope.launch { snackbarHostState.showSnackbar(exportFailed) }
             }
         }
 
     Scaffold(
         modifier = modifier,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.diagnostics_title)) },
@@ -141,14 +145,18 @@ fun DiagnosticsScreen(
         ) {
             if (events.isEmpty()) {
                 EmptyState(
-                    icon = Icons.Outlined.ReceiptLong,
+                    icon = Icons.AutoMirrored.Outlined.ReceiptLong,
                     title = stringResource(R.string.diagnostics_empty_title),
                     body = stringResource(R.string.diagnostics_empty_body),
                     modifier = Modifier.fillMaxSize(),
                 )
             } else {
                 LazyColumn(
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                    contentPadding =
+                        PaddingValues(
+                            horizontal = TrailSpacing.lg,
+                            vertical = TrailSpacing.sm,
+                        ),
                     modifier = Modifier.widthIn(max = 840.dp),
                 ) {
                     items(events, key = { it.id }) { event ->
@@ -198,7 +206,7 @@ private fun EventRow(event: DiagnosticEventEntity) {
             Modifier
                 .fillMaxWidth()
                 .padding(vertical = 10.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(TrailSpacing.md),
         verticalAlignment = Alignment.Top,
     ) {
         Column(modifier = Modifier.widthIn(min = 92.dp)) {

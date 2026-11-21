@@ -1,4 +1,4 @@
-package com.hmilyld.daytrail.ui.components
+﻿package com.hmilyld.daytrail.ui.components
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
@@ -95,7 +95,7 @@ fun MetricRow(
         modifier = modifier.fillMaxWidth(),
     ) {
         Row(
-            modifier = Modifier.padding(vertical = 12.dp),
+            modifier = Modifier.padding(vertical = TrailSpacing.md),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             metrics.forEachIndexed { index, metric ->
@@ -190,7 +190,13 @@ fun CalloutBanner(
         modifier = modifier.fillMaxWidth(),
     ) {
         Row(
-            modifier = Modifier.padding(start = 12.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
+            modifier =
+                Modifier.padding(
+                    start = TrailSpacing.md,
+                    end = TrailSpacing.sm,
+                    top = 10.dp,
+                    bottom = 10.dp,
+                ),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(TrailSpacing.sm),
         ) {

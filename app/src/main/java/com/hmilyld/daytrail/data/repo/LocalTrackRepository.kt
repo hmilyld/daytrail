@@ -56,6 +56,32 @@ class LocalTrackRepository(
         return ids.count { it > 0 }
     }
 
+    override suspend fun importDays(
+        batches: List<DayImportBatch>,
+        replaceExisting: Boolean,
+    ): Int {
+        if (batches.isEmpty()) return 0
+        return database.withTransaction {
+            var inserted = 0
+            batches.forEach { batch ->
+                if (replaceExisting) {
+                    // 与 deleteDay 保持一致：点、停留、断点、纠偏一起清，
+                    // 否则会留下指向已删除点的停留段。
+                    pointDao.deleteDay(batch.dayKey.value)
+                    stayDao.deleteDay(batch.dayKey.value)
+                    gapDao.deleteDay(batch.dayKey.value)
+                    dayDao.deleteDay(batch.dayKey.value)
+                    routeDao.deleteDay(batch.dayKey.value)
+                }
+                inserted += pointDao.insertAll(batch.points).count { it > 0 }
+                // 在事务内重算：导入完成后界面立刻能看到汇总，
+                // 也避免出现「点写进去了、track_day 还是空的」的中间态。
+                recomputeDay(batch.dayKey)
+            }
+            inserted
+        }
+    }
+
     override suspend fun recomputeDay(dayKey: DayKey) {
         val entities = pointDao.pointsOfDay(dayKey.value)
         val samples =

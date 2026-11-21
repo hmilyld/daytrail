@@ -6,13 +6,19 @@ import com.hmilyld.daytrail.data.diagnostics.DiagnosticLog
 import com.hmilyld.daytrail.data.export.ExportManager
 import com.hmilyld.daytrail.data.geocode.PlaceAutoNamer
 import com.hmilyld.daytrail.data.geocode.ReverseGeocodeClient
+import com.hmilyld.daytrail.data.import.ImportManager
 import com.hmilyld.daytrail.data.prefs.SettingsStore
 import com.hmilyld.daytrail.data.repo.LocalTrackRepository
 import com.hmilyld.daytrail.data.repo.NoOpSyncGateway
 import com.hmilyld.daytrail.data.repo.SyncGateway
 import com.hmilyld.daytrail.data.repo.TrackRepository
 import com.hmilyld.daytrail.data.route.GrasproadClient
+import com.hmilyld.daytrail.data.update.UpdateChecker
 import com.hmilyld.daytrail.location.RecordingStateHolder
+import com.hmilyld.daytrail.ui.update.UpdateCoordinator
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 
 /**
  * 手动依赖注入容器。
@@ -59,4 +65,24 @@ class AppContainer(
 
     /** 数据导出。用 SAF 让用户选择保存位置，不需要存储权限。 */
     val exportManager: ExportManager by lazy { ExportManager(appContext, trackRepository) }
+
+    /**
+     * 数据导入。
+     *
+     * 与导出对称：SAF 只拿到用户显式选中的那个文件，不扫描外部存储。
+     */
+    val importManager: ImportManager by lazy { ImportManager(appContext, trackRepository) }
+
+    // ---- 在线更新 ----
+
+    /** 应用级作用域：更新检查与下载不能绑在某个页面的生命周期上。 */
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
+    /** 读取 Release 的 update.json（静态资产，不消耗 API 配额）。 */
+    val updateChecker: UpdateChecker by lazy { UpdateChecker(settingsStore) }
+
+    /** 更新流程的状态与动作，设置页与启动检查共用同一个实例。 */
+    val updateCoordinator: UpdateCoordinator by lazy {
+        UpdateCoordinator(appContext, updateChecker, appScope)
+    }
 }

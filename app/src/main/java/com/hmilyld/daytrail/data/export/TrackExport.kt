@@ -47,6 +47,14 @@ object TrackExport {
     private val ISO_OFFSET: DateTimeFormatter = DateTimeFormatter.ISO_OFFSET_DATE_TIME
 
     /**
+     * 导出格式版本。导入侧同时接受 1（无 schema 字段的历史文件）与本版本。
+     *
+     * 2 = 增加 `accuracies`（逐点精度）。没有它，导入只能按 50 米估计，
+     * 粗点会被当成精确点画出来。
+     */
+    const val SCHEMA_VERSION = 2
+
+    /**
      * GeoJSON FeatureCollection。
      *
      * 结构：每天一个 Feature（LineString），停留点各一个 Feature（Point）。
@@ -56,6 +64,7 @@ object TrackExport {
     fun toGeoJson(
         days: List<ExportDay>,
         zone: ZoneId = ZoneId.systemDefault(),
+        generator: String = "",
     ): String {
         val features = mutableListOf<String>()
 
@@ -72,10 +81,16 @@ object TrackExport {
                     day.points.joinToString(",") { exported ->
                         "\"${iso(exported.timestampMs, zone)}\""
                     }
+                // 精度逐点导出：注意「入库精度」与「画线精度」是两个阈值（4.44），
+                // 丢掉精度信息后导入方无法再区分粗点与精确点。
+                val accuracies =
+                    day.points.joinToString(",") { exported ->
+                        String.format(Locale.US, "%.1f", exported.accuracyMeters)
+                    }
                 features +=
                     """{"type":"Feature","properties":{"date":"${day.dateKey}",""" +
                     """"kind":"track","pointCount":${day.points.size},""" +
-                    """"times":[$times]},""" +
+                    """"accuracies":[$accuracies],"times":[$times]},""" +
                     """"geometry":{"type":"LineString","coordinates":[$coordinates]}}"""
             }
 
@@ -92,7 +107,9 @@ object TrackExport {
             }
         }
 
-        return """{"type":"FeatureCollection","name":"DayTrail",""" +
+        val generatorText = generator.ifBlank { "DayTrail" }
+        return """{"type":"FeatureCollection","schema":$SCHEMA_VERSION,""" +
+            """"generator":"${escapeJson(generatorText)}","name":"DayTrail",""" +
             """"crs":{"type":"name","properties":{"name":"urn:ogc:def:crs:OGC:1.3:CRS84"}},""" +
             """"features":[${features.joinToString(",")}]}"""
     }

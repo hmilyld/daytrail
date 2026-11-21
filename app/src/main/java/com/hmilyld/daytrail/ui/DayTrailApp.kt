@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -44,6 +45,7 @@ import com.hmilyld.daytrail.ui.screens.places.PlacesScreen
 import com.hmilyld.daytrail.ui.screens.settings.SettingsScreen
 import com.hmilyld.daytrail.ui.screens.today.TodayScreen
 import com.hmilyld.daytrail.ui.screens.trip.TripDetailScreen
+import com.hmilyld.daytrail.ui.update.UpdateDialogs
 
 /**
  * 应用根组件。
@@ -63,16 +65,30 @@ fun DayTrailApp(
 ) {
     val onboardingCompleted by
         container.settingsStore.onboardingCompleted.collectAsStateWithLifecycle(initialValue = null)
+    val privacyAccepted by
+        container.settingsStore.privacyAccepted.collectAsStateWithLifecycle(initialValue = null)
 
-    when (onboardingCompleted) {
-        null -> Box(modifier = modifier.fillMaxSize())
-        false ->
+    // 隐私同意是记录「行踪轨迹」（敏感个人信息）的前置条件，必须与引导完成
+    // 一起满足才算就绪。升级到引入同意机制的版本时，老用户的
+    // privacyAccepted 为空 → 会重新走一遍引导页（合规要求：重新取得同意）。
+    val ready = onboardingCompleted == true && privacyAccepted == true
+
+    // 启动时静默检查更新：只有发现新版本才会弹窗。
+    LaunchedEffect(Unit) { container.updateCoordinator.autoCheck() }
+
+    when {
+        onboardingCompleted == null || privacyAccepted == null ->
+            Box(modifier = modifier.fillMaxSize())
+        ready -> MainShell(container = container, modifier = modifier)
+        else ->
             OnboardingScreen(
                 onFinished = { /* SettingsStore 内部已切换为 true，会触发重组 */ },
                 modifier = modifier,
             )
-        true -> MainShell(container = container, modifier = modifier)
     }
+
+    // 弹窗是独立的窗口，不参与上面的布局
+    UpdateDialogs(container.updateCoordinator)
 }
 
 @Composable
@@ -115,6 +131,7 @@ private fun MainShell(
                     )
                 }
                 // 没有导航边栏时，左侧的挖孔要自己避开；有边栏时那一侧由它消费。
+                // 全屏时内容要铺满整个可视区域，inset 交给地图浮层自己处理。
                 var insetSides =
                     WindowInsetsSides.Top + WindowInsetsSides.End + WindowInsetsSides.Bottom
                 if (!showNavigationArea) {
@@ -124,7 +141,15 @@ private fun MainShell(
                     modifier =
                         Modifier
                             .fillMaxSize()
-                            .windowInsetsPadding(WindowInsets.safeDrawing.only(insetSides)),
+                            .then(
+                                if (immersive) {
+                                    Modifier
+                                } else {
+                                    Modifier.windowInsetsPadding(
+                                        WindowInsets.safeDrawing.only(insetSides),
+                                    )
+                                },
+                            ),
                 ) {
                     NavHost(backStack = backStack, container = container)
                 }
@@ -139,7 +164,10 @@ private fun MainShell(
                         )
                     }
                 },
-                contentWindowInsets = WindowInsets.safeDrawing,
+                // 全屏时不给内容加安全区：地图要真正 edge-to-edge，
+                // 浮层避让由各页自己用 immersiveSafePadding 处理。
+                contentWindowInsets =
+                    if (immersive) WindowInsets(0, 0, 0, 0) else WindowInsets.safeDrawing,
             ) { innerPadding ->
                 Box(
                     modifier =

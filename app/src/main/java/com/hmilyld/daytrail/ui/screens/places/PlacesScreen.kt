@@ -1,4 +1,4 @@
-package com.hmilyld.daytrail.ui.screens.places
+﻿package com.hmilyld.daytrail.ui.screens.places
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -50,6 +50,7 @@ import com.hmilyld.daytrail.data.db.dao.PlaceSummary
 import com.hmilyld.daytrail.domain.PlaceNeighbors
 import com.hmilyld.daytrail.ui.appViewModelFactory
 import com.hmilyld.daytrail.ui.components.EmptyState
+import com.hmilyld.daytrail.ui.theme.TrailSpacing
 import java.time.Instant
 import java.time.ZoneId
 
@@ -220,7 +221,7 @@ private fun PlaceCard(
         modifier = Modifier.fillMaxWidth(),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            modifier = Modifier.padding(horizontal = TrailSpacing.lg, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
@@ -253,8 +254,10 @@ private fun PlaceCard(
                     // 只做提示，不自动合并：相距 400 米也可能是两家相邻的店
                     Text(
                         text = stringResource(R.string.places_suspect),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.tertiary,
+                        // 不能用 tertiary 琥珀色：它在浅色背景上只有 2.0:1，
+                        // 作为文字远低于 WCAG AA。这是提示而非告警，用中性色即可。
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 Text(

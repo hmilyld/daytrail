@@ -1,4 +1,4 @@
-package com.hmilyld.daytrail.ui.components.map
+﻿package com.hmilyld.daytrail.ui.components.map
 
 import android.content.Context
 import androidx.compose.foundation.background
@@ -22,6 +22,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.hmilyld.daytrail.R
+import com.hmilyld.daytrail.ui.theme.TrailSpacing
 
 /**
  * 高德地图原生库是否在当前 ABI 上可用。
@@ -65,7 +66,7 @@ fun MapUnavailablePlaceholder(modifier: Modifier = Modifier) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(10.dp),
-            modifier = Modifier.padding(32.dp),
+            modifier = Modifier.padding(TrailSpacing.xxl),
         ) {
             Icon(
                 imageVector = Icons.Outlined.Map,

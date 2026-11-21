@@ -74,6 +74,24 @@ class DiagnosticLog(
         }
 
         private fun escape(value: String): String =
-            value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", " ")
+            buildString(value.length) {
+                for (ch in value) {
+                    when (ch) {
+                        '\\' -> append("\\\\")
+                        '"' -> append("\\\"")
+                        '\n' -> append("\\n")
+                        '\r' -> append("\\r")
+                        '\t' -> append("\\t")
+                        // JSON 规范要求 0x00-0x1F 全部转义，
+                        // 只处理换行会让导出的诊断文件变成非法 JSON
+                        else ->
+                            if (ch < ' ') {
+                                append("\\u").append(ch.code.toString(16).padStart(4, '0'))
+                            } else {
+                                append(ch)
+                            }
+                    }
+                }
+            }
     }
 }

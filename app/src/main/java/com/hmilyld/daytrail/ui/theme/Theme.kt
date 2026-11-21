@@ -51,12 +51,14 @@ private val LightScheme =
 
 private val DarkScheme =
     darkColorScheme(
-        primary = TrailColors.Blue40,
-        onPrimary = Color.White,
-        primaryContainer = TrailColors.Blue10,
+        // 深色下主色用浅蓝：同一个 #1D4ED8 在深色背景上只有 3.x:1，
+        // 既不能让蓝字可读，也让轨迹线糊在深色地图里。
+        primary = TrailColors.Blue80,
+        onPrimary = TrailColors.Blue10,
+        primaryContainer = TrailColors.BlueContainerDark,
         onPrimaryContainer = TrailColors.Blue90,
-        secondary = TrailColors.Green40,
-        onSecondary = Color.Black,
+        secondary = TrailColors.Green60,
+        onSecondary = TrailColors.Green10,
         // 深色下「成功」状态用低饱和绿底，不能直接用 Green10（太暗发黑）
         secondaryContainer = TrailColors.GreenContainerDark,
         onSecondaryContainer = TrailColors.Green90,
@@ -64,10 +66,11 @@ private val DarkScheme =
         onTertiary = Color.Black,
         tertiaryContainer = TrailColors.Amber10,
         onTertiaryContainer = TrailColors.Amber90,
-        error = TrailColors.Red40,
-        onError = Color.White,
+        // 深色下 error 用浅红：深红在 #12151A 上只有 3.79:1
+        error = TrailColors.Red80,
+        onError = TrailColors.RedOnDark,
         errorContainer = TrailColors.RedContainerDark,
-        onErrorContainer = TrailColors.Red90,
+        onErrorContainer = TrailColors.RedOnContainerDark,
         background = TrailColors.SurfaceDark,
         onBackground = TrailColors.OnSurfaceDark,
         surface = TrailColors.SurfaceDark,
