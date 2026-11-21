@@ -10,6 +10,8 @@ import com.hmilyld.daytrail.data.db.entity.TrackPointEntity
 import com.hmilyld.daytrail.data.repo.DayImportBatch
 import com.hmilyld.daytrail.data.repo.TrackRepository
 import com.hmilyld.daytrail.domain.RouteOverride
+import java.time.LocalDate
+import java.time.ZoneId
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -225,8 +227,16 @@ class TrackRecorderTest {
             val repo = FakeTrackRepository()
             val recorder = TrackRecorder(repo, this)
 
-            // 第一天 23:59，第二天 00:01
-            val dayOne = 1_794_672_000_000L + (23 * 3600 + 59 * 60) * 1000L
+            // 第一天 23:59，第二天 00:01。
+            // 基准必须按当前时区取当天零点：用固定 epoch 会在 UTC 的 CI runner 上
+            // 落到一天中间的任意时刻，跨天断言随之失败（本地 Asia/Shanghai 才成立）。
+            val dayStart =
+                LocalDate
+                    .of(2026, 11, 15)
+                    .atStartOfDay(ZoneId.systemDefault())
+                    .toInstant()
+                    .toEpochMilli()
+            val dayOne = dayStart + (23 * 3600 + 59 * 60) * 1000L
             recorder.offer(
                 LocationFix(
                     timestampMs = dayOne,
