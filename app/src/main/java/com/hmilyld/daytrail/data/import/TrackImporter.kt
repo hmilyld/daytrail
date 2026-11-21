@@ -68,15 +68,16 @@ class TrackImporter(
                 dropped += day.points.size
                 return@forEach
             }
-            val clean = clean(day.points)
-            if (clean.size < MIN_DAY_POINTS) {
-                dropped += clean.size
+            val cleaned = clean(day.points)
+            dropped += cleaned.dropped
+            if (cleaned.points.size < MIN_DAY_POINTS) {
+                dropped += cleaned.points.size
                 return@forEach
             }
             batches +=
                 DayImportBatch(
                     dayKey = dayKey,
-                    points = clean.map { point -> point.toEntity(dayKey) },
+                    points = cleaned.points.map { point -> point.toEntity(dayKey) },
                 )
         }
 
@@ -151,16 +152,18 @@ class TrackImporter(
      *
      * 顺序有意为之：先按时间排序，再做「时间窗 + 距离」双重去重——
      * 同一轮采样的重复投递在导出文件里也可能出现（4.23 的同一现象）。
+     *
+     * 同时返回丢弃数量：预览页的「已丢弃 N 个无效点」要包含这里过滤掉的
+     * 坐标非法点与重复点，否则用户会以为文件很干净。
      */
-    private fun clean(points: List<RawPoint>): List<RawPoint> {
+    private fun clean(points: List<RawPoint>): Cleaned {
         val limit = now() + 24L * 60 * 60 * 1000
-        val valid =
-            points
-                .filter { it.isValid(limit) }
-                .sortedBy { it.timestampMs }
+        val valid = points.filter { it.isValid(limit) }
+        val invalid = points.size - valid.size
 
         val result = mutableListOf<RawPoint>()
-        valid.forEach { point ->
+        var duplicates = 0
+        valid.sortedBy { it.timestampMs }.forEach { point ->
             val last = result.lastOrNull()
             val duplicate =
                 last != null &&
@@ -169,10 +172,15 @@ class TrackImporter(
                         GeoPoint(last.latitude, last.longitude),
                         GeoPoint(point.latitude, point.longitude),
                     ) < DEDUPE_METERS
-            if (!duplicate) result += point
+            if (duplicate) duplicates++ else result += point
         }
-        return result
+        return Cleaned(result, invalid + duplicates)
     }
+
+    private data class Cleaned(
+        val points: List<RawPoint>,
+        val dropped: Int,
+    )
 
     private fun RawPoint.isValid(limitMs: Long): Boolean =
         latitude in -90.0..90.0 &&

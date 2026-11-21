@@ -119,6 +119,29 @@ class GpxImportTest {
     }
 
     @Test
+    fun `attributes split across lines are still parsed`() {
+        // 第三方 GPX 常见写法：标签名之后换行再写属性
+        val raw =
+            gpx(
+                """    <trkpt
+        lat="31.230416" lon="121.473701">
+        <time>2026-11-18T08:00:00+08:00</time>
+      </trkpt>""",
+            )
+
+        val parsed = GpxImport.parse(raw, zone)
+
+        assertEquals(1, parsed.days.size)
+        assertEquals(
+            1,
+            parsed.days
+                .first()
+                .points.size,
+        )
+        assertEquals(0, parsed.droppedPoints)
+    }
+
+    @Test
     fun `wpt stays are ignored`() {
         val raw =
             gpx(

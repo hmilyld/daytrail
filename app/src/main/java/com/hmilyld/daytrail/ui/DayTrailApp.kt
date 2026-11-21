@@ -73,9 +73,6 @@ fun DayTrailApp(
     // privacyAccepted 为空 → 会重新走一遍引导页（合规要求：重新取得同意）。
     val ready = onboardingCompleted == true && privacyAccepted == true
 
-    // 启动时静默检查更新：只有发现新版本才会弹窗。
-    LaunchedEffect(Unit) { container.updateCoordinator.autoCheck() }
-
     when {
         onboardingCompleted == null || privacyAccepted == null ->
             Box(modifier = modifier.fillMaxSize())
@@ -87,8 +84,12 @@ fun DayTrailApp(
             )
     }
 
-    // 弹窗是独立的窗口，不参与上面的布局
-    UpdateDialogs(container.updateCoordinator)
+    // 更新检查与弹窗只在进入主界面之后启用：
+    // 否则首次安装时，同意页会被更新弹窗遮住。
+    if (ready) {
+        LaunchedEffect(Unit) { container.updateCoordinator.autoCheck() }
+        UpdateDialogs(container.updateCoordinator)
+    }
 }
 
 @Composable

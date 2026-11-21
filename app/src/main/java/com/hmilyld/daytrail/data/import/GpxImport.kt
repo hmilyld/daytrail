@@ -20,6 +20,7 @@ import java.time.ZoneId
  */
 internal object GpxImport {
     private val ATTRIBUTES = Regex("""([A-Za-z_:][\w:.\-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')""")
+    private val WHITESPACE = Regex("\\s+")
 
     fun parse(
         raw: String,
@@ -37,7 +38,15 @@ internal object GpxImport {
 
             val tag = raw.substring(open + 1, close)
             val selfClosing = tag.trimEnd().endsWith("/")
-            val name = tag.trimEnd('/').trim().substringBefore(' ')
+            // 标签名取第一个空白之前的片段。属性可能跨行书写，
+            // 只按空格切分会把 "<trkpt\n lat=...>" 整段当成名字，
+            // 结果是整条轨迹一个点都不导入。
+            val name =
+                tag
+                    .trimEnd('/')
+                    .trim()
+                    .split(WHITESPACE, limit = 2)
+                    .first()
             position = close + 1
 
             if (name != "trkpt") continue

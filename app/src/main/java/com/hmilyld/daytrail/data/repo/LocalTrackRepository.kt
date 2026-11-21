@@ -76,13 +76,24 @@ class LocalTrackRepository(
                 inserted += pointDao.insertAll(batch.points).count { it > 0 }
                 // 在事务内重算：导入完成后界面立刻能看到汇总，
                 // 也避免出现「点写进去了、track_day 还是空的」的中间态。
-                recomputeDay(batch.dayKey)
+                //
+                // **不自动命名**：一次导入可能新建几十个地点，逐个发起逆地理编码
+                // 会在导入期间打出成批网络请求、消耗日配额，而且这些坐标是在用户
+                // 没有逐个要求的情况下发出的。导入完成后由「补全名称」按钮统一补。
+                recomputeDay(batch.dayKey, autoNamePlace = false)
             }
             inserted
         }
     }
 
     override suspend fun recomputeDay(dayKey: DayKey) {
+        recomputeDay(dayKey, autoNamePlace = true)
+    }
+
+    private suspend fun recomputeDay(
+        dayKey: DayKey,
+        autoNamePlace: Boolean,
+    ) {
         val entities = pointDao.pointsOfDay(dayKey.value)
         val samples =
             entities.map {
@@ -113,7 +124,7 @@ class LocalTrackRepository(
         val knownPlaces = placeDao.all().toMutableList()
         val stays =
             detected.map { stay ->
-                val placeId = resolvePlace(stay, knownPlaces)
+                val placeId = resolvePlace(stay, knownPlaces, autoNamePlace)
                 StaySegmentEntity(
                     dayKey = dayKey.value,
                     startMs = stay.startMs,
@@ -309,6 +320,7 @@ class LocalTrackRepository(
     private suspend fun resolvePlace(
         stay: StaySegment,
         knownPlaces: MutableList<PlaceEntity>,
+        autoName: Boolean,
     ): Long {
         val match =
             PlaceResolver.nearest(
@@ -336,7 +348,9 @@ class LocalTrackRepository(
         val id = placeDao.insert(created)
         knownPlaces += created.copy(id = id)
         // 顺手取个名字。fire-and-forget，失败就保持「未命名」，不阻塞重算。
-        autoNamer?.enrich(id, stay.point)
+        // 导入期间传 false：那时可能一次新建几十个地点，联网请求应当由用户
+        // 之后点「补全名称」触发。
+        if (autoName) autoNamer?.enrich(id, stay.point)
         return id
     }
 

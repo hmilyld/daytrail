@@ -194,6 +194,36 @@ class TrackImporterTest {
         }
 
     @Test
+    fun `invalid points inside a kept day are reported as dropped`() =
+        runTest {
+            val repo = FakeRepository()
+            val importer = TrackImporter(repo)
+            val raw =
+                geoJson(
+                    feature(
+                        coords = "[121.473701,31.230416],[999.0,31.231416],[121.480000,31.240000]",
+                        times =
+                            listOf(
+                                "2026-11-18T08:00:00+08:00",
+                                "2026-11-18T08:01:00+08:00",
+                                "2026-11-18T08:05:00+08:00",
+                            ).joinToString(",") { "\"$it\"" },
+                    ),
+                )
+
+            val preview = (importer.preview("x.geojson", raw) as PreviewResult.Ready).preview
+
+            assertEquals(
+                2,
+                preview.batches
+                    .first()
+                    .points.size,
+            )
+            // 坐标越界的那个点必须出现在「已丢弃」里，否则用户会以为文件很干净
+            assertEquals(1, preview.droppedPoints)
+        }
+
+    @Test
     fun `unrecognised content fails instead of guessing`() =
         runTest {
             val importer = TrackImporter(FakeRepository())
