@@ -66,7 +66,7 @@ $env:ANDROID_HOME = '<PATH_TO_ANDROID_SDK>'
 | 一键向导 | 普通人，Windows 或 macOS | 解压后双击 `setup-my-app.cmd` / `setup-my-app.command` |
 | 手动修改 | 熟悉 Gradle | [`docs/build-your-own.md`](docs/build-your-own.md) 附录 A |
 
-向导会依次完成：改应用名、生成你自己的包名（`app.applicationId`）、生成 release 签名、打印高德控制台的填写卡（包名 + SHA1）、写入 `local.properties`、编译出 APK。
+向导会依次完成：改应用名、生成你自己的包名（`app.applicationId`）、生成 release 签名、打印高德控制台的填写卡（包名 + SHA1）、写入 `local.properties`、编译出 APK（缺 Key 时先跳过编译，补上 Key 再运行一次）。
 
 它只动 `gradle.properties`、`res/values/strings.xml`、图标颜色定义、`local.properties` 与签名文件，**不碰 Kotlin 代码**；改名换色随时可撤回（重新解压 ZIP，或 `git checkout`）。
 

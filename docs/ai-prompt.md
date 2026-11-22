@@ -63,7 +63,7 @@
 
 把当前仓库改造成用户自己的应用，并产出一个可安装的 release APK。全程用中文，一次只问一个问题。
 
-### 允许修改的范围（只允许这 6 处）
+### 允许修改的范围（只允许下列几处）
 
 1. `gradle.properties` → `app.applicationId`、`app.updateRepo`
 2. `app/src/main/res/values/strings.xml` → 应用显示名（`app_name` 与两处正文品牌词）
@@ -71,6 +71,9 @@
 4. `app/keystore/release.jks` 与 `keystore.properties`（仅当两者都不存在时生成）
 5. `local.properties` → 只增改 `AMAP_KEY_RELEASE` / `AMAP_KEY_WEB` / `AMAP_KEY_DEBUG`
 6. `dist/` 下的产物（`amap-fill-card.txt`、`setup-result.json`、`setup-log.txt`）
+
+> 如果启用了国内镜像（`-UseChinaMirrors` / `--use-china-mirrors`），额外允许把
+> `gradle/wrapper/gradle-wrapper.properties` 的 `distributionUrl` 换成镜像地址，只改这一行。
 
 ### 禁止
 
