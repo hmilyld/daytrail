@@ -1,6 +1,7 @@
 package com.hmilyld.daytrail.domain
 
 import com.hmilyld.daytrail.core.GeoPoint
+import com.hmilyld.daytrail.core.distanceMeters
 
 /**
  * 一天的采样点怎么变成地图上的线。
@@ -31,12 +32,18 @@ object TrackDisplay {
      *   再画成一团来回的线是自相矛盾的。实测一天里两处停留能画出 728 m 的无效折线。
      *   不做「只吸附锚点附近 N 米」的部分吸附：实测那样会把几个离群点连成
      *   跨越上百米的三角形，比原样更难看。
+     * @param edit 用户手动微调的结果。**优先级最高**：存在时直接用它，
+     *   上面那些管线一步都不走（用户画的线不该再被抽稀或吸附改动），
+     *   只有编辑之后新采到的点会接着画。
      */
     fun segments(
         points: List<TrackPointSample>,
         stays: List<StaySegment> = emptyList(),
         override: RouteOverride? = null,
+        edit: TrackEdit? = null,
     ): List<List<GeoPoint>> {
+        if (edit != null && edit.segments.isNotEmpty()) return withEditTail(edit, points, stays)
+
         if (points.isEmpty()) return emptyList()
 
         // 没有纠偏结果：完全按原始点画
@@ -52,6 +59,48 @@ object TrackDisplay {
             addAll(override.segments)
             addAll(draw(after, stays))
         }.filter { it.size >= 2 }
+    }
+
+    /**
+     * 编辑线 + 编辑之后新采到的点。
+     *
+     * 录制中允许进编辑，所以「保存之后又来了新点」是常态：那一段必须是增量，
+     * 不能烘进编辑结果，否则每次保存都要重画一遍。
+     *
+     * 接不接上只看 [TrackSegmenter] 的断点判据（时间 + 位移**同时**超阈值）：
+     * 只差几分钟就直接连上，隔了几小时才留白——和自动画线的规则保持一致。
+     */
+    private fun withEditTail(
+        edit: TrackEdit,
+        points: List<TrackPointSample>,
+        stays: List<StaySegment>,
+    ): List<List<GeoPoint>> {
+        val tail = points.filter { it.timestampMs > edit.cutoffMs }
+        if (tail.isEmpty()) return edit.segments
+
+        val tailSegments = draw(tail, stays)
+        if (tailSegments.isEmpty()) return edit.segments
+
+        val end = edit.segments.lastOrNull()?.lastOrNull()
+        val first = tail.first()
+        // 与自动画线同一套判据：时间和位移**同时**超阈值才算断开
+        val jumped =
+            end != null &&
+                distanceMeters(end, first.point) > TrackSegmenter.GAP_MIN_DISPLACEMENT_METERS
+        val waited = first.timestampMs - edit.cutoffMs > TrackSegmenter.GAP_MIN_MS
+
+        // 连得上就并成一段：两段折线在同一个点上首尾相接会露出一条缝
+        // （每段的端点都是平头），看起来像轨迹断了。
+        if (end != null && !(jumped && waited)) {
+            val merged = edit.segments.last() + tailSegments.first()
+            return buildList {
+                addAll(edit.segments.dropLast(1))
+                add(merged)
+                addAll(tailSegments.drop(1))
+            }
+        }
+
+        return edit.segments + tailSegments
     }
 
     /** 精度筛 → 毛刺修复 → 停留吸附 → 切段。 */

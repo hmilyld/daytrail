@@ -11,6 +11,7 @@ import com.hmilyld.daytrail.data.db.entity.TrackPointEntity
 import com.hmilyld.daytrail.data.repo.DayImportBatch
 import com.hmilyld.daytrail.data.repo.TrackRepository
 import com.hmilyld.daytrail.domain.RouteOverride
+import com.hmilyld.daytrail.domain.TrackEdit
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
@@ -342,6 +343,15 @@ class TrackImporterTest {
         ) = error("not used")
 
         override suspend fun clearRoute(dayKey: DayKey) = error("not used")
+
+        override fun observeEdit(dayKey: DayKey): Flow<TrackEdit?> = error("not used")
+
+        override suspend fun saveEdit(
+            dayKey: DayKey,
+            edit: TrackEdit,
+        ) = error("not used")
+
+        override suspend fun clearEdit(dayKey: DayKey) = error("not used")
 
         override suspend fun deleteDay(dayKey: DayKey) = error("not used")
 

@@ -164,6 +164,27 @@ data class PlaceEntity(
 )
 
 /**
+ * 手动微调后的折线（派生数据，只影响显示）。
+ *
+ * 和 [RouteOverrideEntity] 同一条原则：原始点一个都不改，`track_day` 里的
+ * 里程时长也不动。区别是纠偏结果只覆盖驾车时间窗，手动微调覆盖**整天**，
+ * 并且带一个截断点，让录制中保存之后的新点还能接着画。
+ */
+@Entity(tableName = "track_edit")
+data class TrackEditEntity(
+    @PrimaryKey
+    @ColumnInfo(name = "day_key")
+    val dayKey: String,
+    /** 折线坐标，JSON 数组 `[[[lon,lat],...],...]`，按断点分段。 */
+    val segments: String,
+    /** 进入编辑时最后一个原始点的时间戳。更大的点算「编辑之后新采到的」。 */
+    @ColumnInfo(name = "cutoff_ts")
+    val cutoffMs: Long,
+    @ColumnInfo(name = "updated_at")
+    val updatedAtMs: Long,
+)
+
+/**
  * 纠偏后的路线（派生数据，不参与统计）。
  *
  * 只存「用户点了补全路线」之后的结果。原始点一个都不改，

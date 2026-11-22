@@ -12,6 +12,7 @@ import com.hmilyld.daytrail.data.db.entity.PlaceEntity
 import com.hmilyld.daytrail.data.db.entity.RouteOverrideEntity
 import com.hmilyld.daytrail.data.db.entity.StaySegmentEntity
 import com.hmilyld.daytrail.data.db.entity.TrackDayEntity
+import com.hmilyld.daytrail.data.db.entity.TrackEditEntity
 import com.hmilyld.daytrail.data.db.entity.TrackPointEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -264,5 +265,29 @@ interface RouteOverrideDao {
     suspend fun deleteDay(dayKey: String)
 
     @Query("DELETE FROM route_override")
+    suspend fun deleteAll()
+}
+
+/**
+ * 手动微调的折线。
+ *
+ * 一天最多一行：编辑结果就是「这一天最终画出来的线」，
+ * 不是一个可以叠加的补丁。
+ */
+@Dao
+interface TrackEditDao {
+    @Upsert
+    suspend fun upsert(edit: TrackEditEntity)
+
+    @Query("SELECT * FROM track_edit WHERE day_key = :dayKey")
+    suspend fun ofDay(dayKey: String): TrackEditEntity?
+
+    @Query("SELECT * FROM track_edit WHERE day_key = :dayKey")
+    fun observeOfDay(dayKey: String): Flow<TrackEditEntity?>
+
+    @Query("DELETE FROM track_edit WHERE day_key = :dayKey")
+    suspend fun deleteDay(dayKey: String)
+
+    @Query("DELETE FROM track_edit")
     suspend fun deleteAll()
 }

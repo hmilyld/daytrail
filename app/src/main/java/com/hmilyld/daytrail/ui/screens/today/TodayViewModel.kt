@@ -21,6 +21,7 @@ import com.hmilyld.daytrail.data.repo.toStaySegment
 import com.hmilyld.daytrail.data.repo.todayKey
 import com.hmilyld.daytrail.domain.StayMarkers
 import com.hmilyld.daytrail.domain.TrackDisplay
+import com.hmilyld.daytrail.domain.TrackEdit
 import com.hmilyld.daytrail.domain.TrackPointSample
 import com.hmilyld.daytrail.location.LocationFailureReason
 import com.hmilyld.daytrail.location.RecordingStateHolder
@@ -74,6 +75,8 @@ data class TodayUiState(
     val startedAtLabel: String? = null,
     /** 当天停留，按时间正序。今日行程卡只展示最后几条。 */
     val stays: List<TodayStay> = emptyList(),
+    /** 这一天的折线被手动微调过：渲染时不能再抽稀，否则刚加的顶点会被删掉。 */
+    val hasManualEdit: Boolean = false,
 )
 
 /**
@@ -108,8 +111,10 @@ class TodayViewModel(
             repository.observeStays(dayKey),
         ) { state, lastFix, day, points, stays ->
             TodaySource(state = state, lastFix = lastFix, day = day, points = points, stays = stays)
-        }.combine(repository.observePlaces()) { source, places ->
-            buildState(source, places)
+        }.combine(repository.observeEdit(dayKey)) { source, edit ->
+            source to edit
+        }.combine(repository.observePlaces()) { (source, edit), places ->
+            buildState(source, places, edit)
         }.combine(recordingState.locationIssue) { state, issue ->
             state.copy(locationIssue = issue)
         }.combine(recordingState.fixStale) { state, stale ->
@@ -140,6 +145,7 @@ class TodayViewModel(
     private fun buildState(
         source: TodaySource,
         places: List<PlaceSummary>,
+        edit: TrackEdit?,
     ): TodayUiState {
         val day = source.day
         val points = source.points
@@ -167,6 +173,7 @@ class TodayViewModel(
             pointCount = points.size,
             // 精度过滤、毛刺修复、停留吸附、按「时间 + 位移」切段都在 TrackDisplay 里，
             // 今日页和单日详情共用同一套，避免两处画出来的线不一样。
+            // 手动微调优先级最高：单日详情里改过的线，回到今日页也得是同一个形状。
             trackSegments =
                 TrackDisplay.segments(
                     points.map { entity ->
@@ -177,6 +184,7 @@ class TodayViewModel(
                         )
                     },
                     stays.map { it.toStaySegment() },
+                    edit = edit,
                 ),
             stayMarkers = stayPlan.markers,
             stayCentroids = stayPlan.centroids,
@@ -197,6 +205,13 @@ class TodayViewModel(
                                 listOf(stays.size, points.size),
                             ),
                         )
+                }.let { summary ->
+                    // 读屏用户看不到「线被拖过」，必须在文字里补上
+                    if (edit != null && summary.isNotEmpty()) {
+                        summary + UiText.Res(R.string.map_summary_edited)
+                    } else {
+                        summary
+                    }
                 },
             startedAtLabel = startedAt?.let(DateLabels::time),
             stays =
@@ -207,6 +222,7 @@ class TodayViewModel(
                         minutes = ((stay.endMs - stay.startMs) / 60_000L).toInt(),
                     )
                 },
+            hasManualEdit = edit != null,
         )
     }
 

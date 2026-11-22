@@ -21,7 +21,7 @@ SystemLocationSource（系统 LocationManager，唯一位置来源）
         LocalTrackRepository
                 │
                 ▼
-        Room（track_day / track_point / stay_segment / day_gap / place / route_override）
+        Room（track_day / track_point / stay_segment / day_gap / place / route_override / track_edit）
                 │
                 ▼
         ViewModel → TrackDisplay（精度筛选 → 毛刺修复 → 停留吸附 → 断点切段）

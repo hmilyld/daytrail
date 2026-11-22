@@ -8,6 +8,7 @@ import com.hmilyld.daytrail.data.db.entity.StaySegmentEntity
 import com.hmilyld.daytrail.data.db.entity.TrackDayEntity
 import com.hmilyld.daytrail.data.db.entity.TrackPointEntity
 import com.hmilyld.daytrail.domain.RouteOverride
+import com.hmilyld.daytrail.domain.TrackEdit
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -172,6 +173,25 @@ interface TrackRepository {
 
     /** 清除纠偏结果，回到原始折线。 */
     suspend fun clearRoute(dayKey: DayKey)
+
+    // ---- 手动微调 ----
+
+    /**
+     * 手动微调后的折线。没有就是 null。
+     *
+     * 和 [observeRoute] 一样是**派生数据**：只影响地图上画出来的线，
+     * 不参与里程、时长、停留、断点、地点的计算，也不进导出文件。
+     */
+    fun observeEdit(dayKey: DayKey): Flow<TrackEdit?>
+
+    /** 保存手动微调结果。原始点与 `track_day` 一个字段都不动。 */
+    suspend fun saveEdit(
+        dayKey: DayKey,
+        edit: TrackEdit,
+    )
+
+    /** 还原成自动画出来的线。 */
+    suspend fun clearEdit(dayKey: DayKey)
 
     // ---- 维护 ----
 

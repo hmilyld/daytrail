@@ -72,6 +72,13 @@ fun TrackOverlay(
     fitKey: Any? = null,
     /** 是否画出每个采样点。单日详情打开，今日页关闭（录制中会频繁重建）。 */
     sampleDots: Boolean = false,
+    /**
+     * 是否在画之前再抽稀一次。
+     *
+     * 手动微调的折线必须传 false：用户刚拖出来的顶点如果还在一条直线上，
+     * Douglas-Peucker 会把它当共线点删掉，保存后「点没了」。
+     */
+    simplify: Boolean = true,
 ) {
     val currentAmap by rememberUpdatedState(amap)
     val density = LocalDensity.current
@@ -110,6 +117,7 @@ fun TrackOverlay(
         stayIcon,
         sampleIcon,
         sampleDots,
+        simplify,
     ) {
         val map = currentAmap ?: return@LaunchedEffect
         overlay.clear()
@@ -119,11 +127,11 @@ fun TrackOverlay(
 
         segments.forEach { segment ->
             if (segment.size < 2) return@forEach
-            val simplified = TrackSimplifier.simplify(segment)
+            val drawn = if (simplify) TrackSimplifier.simplify(segment) else segment
             val line: Polyline =
                 map.addPolyline(
                     PolylineOptions()
-                        .addAll(simplified.map { LatLng(it.latitude, it.longitude) })
+                        .addAll(drawn.map { LatLng(it.latitude, it.longitude) })
                         .color(polylineColor)
                         .width(12f)
                         .setUseTexture(false),
@@ -233,7 +241,7 @@ private const val SAMPLE_DOT_Z_INDEX = 1f
 private const val POINT_Z_INDEX = 10f
 
 /** 把镜头缩放到能看全整条轨迹。单个点或极近的点用固定缩放级别。 */
-private fun fitBounds(
+internal fun fitBounds(
     map: AMap,
     points: List<GeoPoint>,
 ) {

@@ -120,6 +120,25 @@
     <string name="day_detail_route_restore">还原</string>
     <string name="day_detail_route_retry">重试</string>
 
+    <!-- 手动微调 -->
+    <string name="day_detail_edit_track">微调显示</string>
+    <string name="day_detail_edit_track_hint">拖动顶点修正画出来的线，只影响显示，不改统计与导出</string>
+    <string name="day_detail_edit_done">已手动修正 · 仅影响显示</string>
+    <string name="day_detail_edit_restore">还原</string>
+    <string name="edit_hint">拖动顶点调整位置；点轨迹线可以加一个点</string>
+    <string name="edit_insert_miss">请点在轨迹线上</string>
+    <string name="edit_recording_notice">正在记录：编辑期间的新点暂不显示，保存后会接着画</string>
+    <string name="edit_action_undo">撤销</string>
+    <string name="edit_action_delete">删除这个点</string>
+    <string name="edit_action_discard">放弃</string>
+    <string name="edit_action_save">保存</string>
+    <string name="edit_action_saving">保存中…</string>
+    <string name="edit_save_failed">保存失败，请重试</string>
+    <string name="edit_discard_title">放弃这次修改？</string>
+    <string name="edit_discard_body">已拖动的顶点不会保存，已经保存过的修正也不受影响。</string>
+    <string name="edit_discard_confirm">放弃修改</string>
+    <string name="edit_keep_editing">继续调整</string>
+
     <!-- 导出 -->
     <string name="export_title">导出数据</string>
     <string name="export_action">导出</string>
@@ -339,6 +358,7 @@
     <string name="map_summary_stays">%1$d 处停留</string>
     <string name="map_summary_points">%1$d 个采样点</string>
     <string name="map_summary_segments">分为 %1$d 段</string>
+    <string name="map_summary_edited">轨迹经过手动修正，只影响显示</string>
     <string name="map_summary_today_points">轨迹地图，今日共 %1$d 个采样点</string>
     <string name="map_summary_today_both">轨迹地图，今日 %1$d 处停留，共 %2$d 个采样点</string>
     <string name="list_separator">，</string>

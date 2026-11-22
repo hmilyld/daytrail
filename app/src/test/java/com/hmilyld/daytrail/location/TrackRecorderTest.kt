@@ -10,6 +10,7 @@ import com.hmilyld.daytrail.data.db.entity.TrackPointEntity
 import com.hmilyld.daytrail.data.repo.DayImportBatch
 import com.hmilyld.daytrail.data.repo.TrackRepository
 import com.hmilyld.daytrail.domain.RouteOverride
+import com.hmilyld.daytrail.domain.TrackEdit
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -106,6 +107,15 @@ private class FakeTrackRepository : TrackRepository {
     ) = Unit
 
     override suspend fun clearRoute(dayKey: DayKey) = Unit
+
+    override fun observeEdit(dayKey: DayKey): Flow<TrackEdit?> = flowOf(null)
+
+    override suspend fun saveEdit(
+        dayKey: DayKey,
+        edit: TrackEdit,
+    ) = Unit
+
+    override suspend fun clearEdit(dayKey: DayKey) = Unit
 
     override suspend fun deleteDay(dayKey: DayKey) = Unit
 
