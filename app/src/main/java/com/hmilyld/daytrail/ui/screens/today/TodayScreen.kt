@@ -200,6 +200,8 @@ private fun TodayContent(
                         // 进入全屏时缩一次，让整条轨迹落进更大的画布。
                         autoFit = !recording || expanded,
                         fitKey = if (expanded) FULLSCREEN_FIT_KEY else state.pointCount,
+                        // 手动微调过的线不能再抽稀，否则刚加的顶点会被删掉
+                        simplify = !state.hasManualEdit,
                     )
                 } else {
                     MapUnavailablePlaceholder(modifier = Modifier.fillMaxSize())
