@@ -4,8 +4,14 @@
 
 - 无账号体系，无自建服务器，轨迹数据仅存储于本机
 - 除地图瓦片加载与用户主动触发的高德 Web 服务调用外，不进行其他联网
-- 包名 `com.hmilyld.daytrail`，调试构建使用 `.debug` 后缀
+- 包名默认 `com.hmilyld.daytrail`（可在 `gradle.properties` 改成自己的），调试构建使用 `.debug` 后缀
 - 最低系统版本 Android 12（API 31）
+
+> **建议自己编译使用。** 直接安装别人打好的安装包，会让所有人共用同一把高德 Key：
+> 调用量叠加后会触发限流，甚至让高德开始收费。自己编译只要三步，见
+> [编译属于你自己的行迹](docs/build-your-own.md)。
+>
+> 不想自己动手？[复制一段提示词让 AI 做](docs/ai-prompt.md)。不需要 GitHub 账号，也不用看懂命令。
 
 ## 界面
 
@@ -48,17 +54,53 @@ $env:ANDROID_HOME = '<PATH_TO_ANDROID_SDK>'
 
 `scripts/verify.ps1` 在环境变量缺失时会自动探测 JDK 与 SDK。
 
+## 编译自己的版本
+
+不建议直接分发或安装本项目的成品 APK：高德 Key 绑定「包名 + 签名 SHA1」，所有人共用同一把 Key，调用量叠加后会触发限流甚至开始收费。
+
+自己编译的方式有三种，任选：
+
+| 方式 | 适合 | 入口 |
+|---|---|---|
+| AI 口令 | 有能操作电脑的 AI | 复制 4 行口令，见 [`docs/ai-prompt.md`](docs/ai-prompt.md) |
+| 一键向导 | 普通人，Windows 或 macOS | 解压后双击 `setup-my-app.cmd` / `setup-my-app.command` |
+| 手动修改 | 熟悉 Gradle | [`docs/build-your-own.md`](docs/build-your-own.md) 附录 A |
+
+向导会依次完成：改应用名、生成你自己的包名（`app.applicationId`）、生成 release 签名、打印高德控制台的填写卡（包名 + SHA1）、写入 `local.properties`、编译出 APK。
+
+它只动 `gradle.properties`、`res/values/strings.xml`、图标颜色定义、`local.properties` 与签名文件，**不碰 Kotlin 代码**；改名换色随时可用 `git checkout` 撤回。
+
+```powershell
+# Windows：交互式向导（也可以直接双击 setup-my-app.cmd）
+powershell -ExecutionPolicy Bypass -File scripts\setup-my-app.ps1
+
+# AI / 自动化：先只做准备，拿到包名与 SHA1；填好 Key 后去掉 -NoBuild 再跑一次即编译出 APK
+# 结果同时写入 dist/setup-result.json（含 packageName / sha1Release / apkPath）
+powershell -ExecutionPolicy Bypass -File scripts\setup-my-app.ps1 -Name 山行 -Id zhangsan -NoBuild -Json -Yes
+```
+
+```bash
+# macOS / Linux
+bash scripts/setup-my-app.sh
+bash scripts/setup-my-app.sh --name 山行 --id zhangsan --no-build --json --yes
+```
+
+完整的零基础步骤、图标配色、费用说明与常见报错见 [`docs/build-your-own.md`](docs/build-your-own.md)。
+
 ## 配置高德 Key
 
 仓库不包含任何 Key。未配置时应用仍可构建运行，但地图显示占位说明，轨迹纠偏与地点名反查静默失败。
+
+自己编译的人请先看 [`docs/build-your-own.md`](docs/build-your-own.md)：向导会直接给出需要填进控制台的包名与 SHA1。
+下面的说明适用于维护本仓库的作者与贡献者。
 
 1. 访问 <https://console.amap.com/dev/key> 注册并完成实名认证。
 2. 申请三个 Key：
 
    | Key | 服务平台 | 绑定信息 |
    |---|---|---|
-   | Release | Android 平台 SDK | 包名 `com.hmilyld.daytrail` 与 release 签名 SHA1 |
-   | Debug | Android 平台 SDK | 包名 `com.hmilyld.daytrail.debug` 与 debug 签名 SHA1 |
+   | Release | Android 平台 SDK | 包名 `<app.applicationId>`（默认 `com.hmilyld.daytrail`）与 release 签名 SHA1 |
+   | Debug | Android 平台 SDK | 包名 `<app.applicationId>.debug` 与 debug 签名 SHA1 |
    | Web 服务 | Web 服务 | 用于轨迹纠偏与逆地理编码 |
 
 3. 获取签名 SHA1：

@@ -6,6 +6,12 @@
 .\scripts\verify.ps1
 ```
 
+macOS / Linux 没有对应的 `.ps1` 运行环境，直接跑同一组 Gradle 任务：
+
+```bash
+./gradlew :app:spotlessCheck :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
+```
+
 该脚本依次执行 `spotlessCheck`、Debug 与 Release 构建、两套单元测试与两套 lint。验收标准为 lint 无 error；warning 允许存在，多为依赖版本提示。
 
 仅需快速自检时可使用 `.\scripts\verify.ps1 -Quick`。

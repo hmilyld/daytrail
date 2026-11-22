@@ -4,6 +4,9 @@
 >
 > 本项目**不内置任何 Key**。每个使用者（包括 fork 者）必须自己申请，
 > 否则地图显示占位说明、纠偏与地名反查静默失败。
+>
+> **自己编译的人先看 [编译属于你自己的行迹](build-your-own.md)**：
+> 那份文档会告诉你包名、SHA1 从哪里来，只需要两个 Key，不需要读完这一页。
 
 ## 一、账号前置
 
@@ -15,34 +18,37 @@
 
 > 认证通常需要几分钟至一个工作日。企业认证配额更高，个人使用无需升级。
 
-## 二、要申请三个 Key
+## 二、要申请几个 Key
 
-| Key | 平台 | 绑定 |
-|---|---|---|
-| Release 版 | Android 平台 SDK | 包名 `com.hmilyld.daytrail` + release SHA1 |
-| Debug 版 | Android 平台 SDK | 包名 `com.hmilyld.daytrail.debug` + debug SHA1 |
-| Web 服务版 | Web 服务 | 用于轨迹纠偏与地点名反查 |
+| 用途 | 平台 | 绑定 | 是否必需 |
+|---|---|---|---|
+| 正式版 | Android 平台 SDK | 包名 `<app.applicationId>`（默认 `com.hmilyld.daytrail`）+ release SHA1 | 必需，否则没有地图底图 |
+| Web 服务版 | Web 服务 | 无包名 | 必需，用于轨迹纠偏与地点名反查 |
+| 调试版 | Android 平台 SDK | 包名 `<app.applicationId>.debug` + debug SHA1 | 可选，只有用 Android Studio 连手机调试才需要 |
 
-高德**一个 Key 只绑定一个包名**，而本工程的 debug 变体带 `.debug` 后缀，所以 SDK Key 必须两个。
+高德**一个 Key 只绑定一个包名**，而 debug 变体带 `.debug` 后缀，所以两个 SDK Key 不能共用。
 Web 服务 Key 与 Android SDK Key 不可混用，用途不同。
 
-### Key A — Release 版
+包名以 `gradle.properties` 的 `app.applicationId` 为准；跑了改造向导的话，
+`dist/amap-fill-card.txt` 里已经写好了该填的两个值。
+
+### Key A — 正式版
 
 | 字段 | 值 |
 |---|---|
 | Key 名称 | 自填，例如 `daytrail-release` |
 | 发布版安全码 SHA1 | `<YOUR_RELEASE_SHA1>` |
 | 调试版安全码 SHA1 | 留空 |
-| PackageName | `com.hmilyld.daytrail` |
+| PackageName | `<YOUR_APP_APPLICATION_ID>`（默认 `com.hmilyld.daytrail`） |
 
-### Key B — Debug 版
+### Key B — 调试版（可选）
 
 | 字段 | 值 |
 |---|---|
 | Key 名称 | 自填，例如 `daytrail-debug` |
 | 发布版安全码 SHA1 | 留空 |
 | 调试版安全码 SHA1 | `<YOUR_DEBUG_SHA1>` |
-| PackageName | `com.hmilyld.daytrail.debug` |
+| PackageName | `<YOUR_APP_APPLICATION_ID>.debug` |
 
 ### Key C — Web 服务版
 
