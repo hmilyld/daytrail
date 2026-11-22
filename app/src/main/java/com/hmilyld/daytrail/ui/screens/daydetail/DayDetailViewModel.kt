@@ -13,6 +13,7 @@ import com.hmilyld.daytrail.data.db.entity.DayGapEntity
 import com.hmilyld.daytrail.data.db.entity.StaySegmentEntity
 import com.hmilyld.daytrail.data.db.entity.TrackDayEntity
 import com.hmilyld.daytrail.data.db.entity.TrackPointEntity
+import com.hmilyld.daytrail.data.prefs.RecordingState
 import com.hmilyld.daytrail.data.repo.TrackRepository
 import com.hmilyld.daytrail.data.repo.toMarkerStay
 import com.hmilyld.daytrail.data.repo.toStaySegment
@@ -21,8 +22,14 @@ import com.hmilyld.daytrail.domain.RouteOverride
 import com.hmilyld.daytrail.domain.StayMarkers
 import com.hmilyld.daytrail.domain.TrackCorrection
 import com.hmilyld.daytrail.domain.TrackDisplay
+import com.hmilyld.daytrail.domain.TrackEdit
+import com.hmilyld.daytrail.domain.TrackEditOps
 import com.hmilyld.daytrail.domain.TrackPointSample
+import com.hmilyld.daytrail.domain.TrackVertex
+import com.hmilyld.daytrail.location.RecordingStateHolder
 import com.hmilyld.daytrail.ui.UiText
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -31,6 +38,12 @@ import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+
+/** 撤销栈上限。一天几百个顶点，留 50 步足够回退到任何误操作之前。 */
+private const val MAX_UNDO = 50
+
+/** 提示的停留时长。 */
+private const val NOTICE_DURATION_MS = 2_000L
 
 /** 时间轴节点类型。 */
 enum class TimelineKind {
@@ -77,8 +90,34 @@ data class DayDetailUiState(
     val routeOverride: RouteOverride? = null,
     /** 纠偏失败的原因。 */
     val routeError: UiText? = null,
+    /** 是否有手动微调结果。只影响显示，不影响任何数字。 */
+    val hasManualEdit: Boolean = false,
+    /** 有没有可以微调的折线。地图不可用时由界面再挡一次。 */
+    val canEditTrack: Boolean = false,
 ) {
     val hasTrack: Boolean get() = trackSegments.any { it.size >= 2 }
+}
+
+/**
+ * 手动微调的编辑态。
+ *
+ * 和 [DayDetailUiState] 分开：编辑期间数据侧每来一个新点都会重建 uiState，
+ * 混在一起就得在每次重建时把编辑草稿抄一遍，很容易漏字段。
+ */
+data class TrackEditUiState(
+    val active: Boolean = false,
+    /** 编辑中的折线（按断点分段）。 */
+    val segments: List<List<GeoPoint>> = emptyList(),
+    val selected: TrackVertex? = null,
+    val canDelete: Boolean = false,
+    val undoDepth: Int = 0,
+    val saving: Boolean = false,
+    /** 瞬时提示，比如「请点在轨迹线上」。 */
+    val notice: UiText? = null,
+    /** 这一天正在记录：编辑期间新来的点暂时不画。 */
+    val recording: Boolean = false,
+) {
+    val hasSelection: Boolean get() = selected != null
 }
 
 /**
@@ -91,11 +130,24 @@ data class DayDetailUiState(
 class DayDetailViewModel(
     private val repository: TrackRepository,
     private val correctionClient: GrasproadClient,
+    private val recordingState: RecordingStateHolder,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(DayDetailUiState())
     val uiState: StateFlow<DayDetailUiState> = _uiState.asStateFlow()
 
+    private val _editState = MutableStateFlow(TrackEditUiState())
+    val editState: StateFlow<TrackEditUiState> = _editState.asStateFlow()
+
     private var loadedKey: String? = null
+
+    /** 编辑基线：进入编辑时的折线，用于「放弃」和撤销栈。 */
+    private var editCutoffMs = 0L
+
+    /** 撤销栈。存整份折线的快照：一天几百个点，存得起，也比增量回放可靠。 */
+    private val undoStack = ArrayDeque<List<List<GeoPoint>>>()
+
+    /** 提示的自动清除任务。连续点错时不能堆一串定时器。 */
+    private var noticeJob: Job? = null
 
     /**
      * 加载某天。
@@ -109,6 +161,8 @@ class DayDetailViewModel(
     fun load(dateKey: String) {
         if (loadedKey == dateKey) return
         loadedKey = dateKey
+        // 换一天时编辑态必须归零，否则会把上一天的草稿带过来
+        resetEditState()
 
         viewModelScope.launch {
             _uiState.value = DayDetailUiState(dateKey = dateKey, loading = true)
@@ -124,7 +178,9 @@ class DayDetailViewModel(
             ) { points, stays, gaps, day, places ->
                 DaySource(points, stays, gaps, day, places)
             }.combine(repository.observeRoute(key)) { source, route ->
-                buildState(dateKey, source, route)
+                source to route
+            }.combine(repository.observeEdit(key)) { (source, route), edit ->
+                buildState(dateKey, source, route, edit)
             }.collect { state ->
                 // 构建出的状态是「数据侧」的，瞬时状态（正在补全、错误文案）要带过来，
                 // 否则录制中每来一个点就会把「正在补全」刷掉。
@@ -226,6 +282,188 @@ class DayDetailViewModel(
         }
     }
 
+    // ---- 手动微调 ----
+
+    /**
+     * 进入编辑。
+     *
+     * 基线用**当前画出来的线**（`trackSegments`）：用户看到什么样，就拖什么样。
+     * 抽稀到 5 米和地图折线一致，否则会出现「拐角没有手柄」和
+     * 「拖了没变化」（点被抽稀删掉）两种困惑。
+     *
+     * 截断点取这一刻最后一条原始点的时间戳：之后再采到的点属于「增量」，
+     * 保存后接着画，不会被烘进编辑结果。
+     */
+    fun beginEdit() {
+        val dateKey = loadedKey ?: return
+        if (_editState.value.active) return
+
+        viewModelScope.launch {
+            val key = DayKeys.parse(dateKey) ?: return@launch
+            val baseline = TrackEditOps.baseline(_uiState.value.trackSegments)
+            if (!TrackEditOps.isEditable(baseline)) {
+                _editState.value = TrackEditUiState(notice = UiText.Res(R.string.edit_no_track))
+                return@launch
+            }
+
+            undoStack.clear()
+            editCutoffMs = repository.pointsOfDay(key).maxOfOrNull { it.timestampMs } ?: 0L
+            _editState.value =
+                TrackEditUiState(
+                    active = true,
+                    segments = baseline,
+                    recording = isRecording(dateKey),
+                )
+        }
+    }
+
+    /** 选中一个顶点。再点一次取消选中。 */
+    fun selectVertex(vertex: TrackVertex?) {
+        val state = _editState.value
+        if (!state.active) return
+        val next = if (state.selected == vertex) null else vertex
+        _editState.value =
+            state.copy(
+                selected = next,
+                canDelete = next != null && TrackEditOps.canDelete(state.segments, next),
+            )
+    }
+
+    /** 拖动结束：把顶点落到新位置。 */
+    fun moveVertex(
+        vertex: TrackVertex,
+        to: GeoPoint,
+    ) {
+        val state = _editState.value
+        if (!state.active) return
+        applySegments(TrackEditOps.move(state.segments, vertex, to))
+    }
+
+    /** 点线段加一个点，并自动选中，方便接着拖到路上。 */
+    fun insertPoint(
+        tap: GeoPoint,
+        maxDistanceMeters: Double = TrackEditOps.MATCH_RADIUS_METERS,
+    ) {
+        val state = _editState.value
+        if (!state.active) return
+
+        val insertion = TrackEditOps.nearest(state.segments, tap, maxDistanceMeters)
+        if (insertion == null) {
+            showNotice(UiText.Res(R.string.edit_insert_miss))
+            return
+        }
+
+        val added = TrackVertex(insertion.segmentIndex, insertion.insertIndex)
+        applySegments(TrackEditOps.insert(state.segments, insertion), selected = added)
+    }
+
+    /** 删除选中的顶点。每段至少留两个点。 */
+    fun deleteSelected() {
+        val state = _editState.value
+        val vertex = state.selected ?: return
+        if (!state.active || !TrackEditOps.canDelete(state.segments, vertex)) return
+        applySegments(TrackEditOps.delete(state.segments, vertex), selected = null)
+    }
+
+    /** 撤销一步。 */
+    fun undo() {
+        val state = _editState.value
+        if (!state.active) return
+        val previous = undoStack.removeLastOrNull() ?: return
+        _editState.value =
+            state.copy(
+                segments = previous,
+                selected = null,
+                canDelete = false,
+                undoDepth = undoStack.size,
+                notice = null,
+            )
+    }
+
+    /** 放弃本次编辑。已保存的结果不受影响。 */
+    fun cancelEdit() {
+        resetEditState()
+    }
+
+    /**
+     * 保存。
+     *
+     * 只写 `track_edit` 一张表：原始点、`track_day`、停留、断点、地点全都不动。
+     */
+    fun saveEdit() {
+        val dateKey = loadedKey ?: return
+        val state = _editState.value
+        if (!state.active || !TrackEditOps.isEditable(state.segments)) return
+
+        _editState.value = state.copy(saving = true)
+        viewModelScope.launch {
+            val key = DayKeys.parse(dateKey)
+            if (key != null) {
+                repository.saveEdit(
+                    key,
+                    TrackEdit(
+                        segments = state.segments,
+                        cutoffMs = editCutoffMs,
+                        updatedAtMs = System.currentTimeMillis(),
+                    ),
+                )
+            }
+            resetEditState()
+        }
+    }
+
+    /** 还原成自动画出来的线。 */
+    fun restoreEdit() {
+        val dateKey = loadedKey ?: return
+        viewModelScope.launch {
+            DayKeys.parse(dateKey)?.let { repository.clearEdit(it) }
+        }
+    }
+
+    /** 记一步撤销历史并落到状态里。[selected] 为空表示清空选中。 */
+    private fun applySegments(
+        next: List<List<GeoPoint>>,
+        selected: TrackVertex? = _editState.value.selected,
+    ) {
+        val state = _editState.value
+        if (next === state.segments) return
+
+        undoStack.addLast(state.segments)
+        while (undoStack.size > MAX_UNDO) undoStack.removeFirst()
+
+        _editState.value =
+            state.copy(
+                segments = next,
+                selected = selected,
+                canDelete = selected != null && TrackEditOps.canDelete(next, selected),
+                undoDepth = undoStack.size,
+                notice = null,
+            )
+    }
+
+    /** 提示 2 秒后自动消失，避免挡住工具条。 */
+    private fun showNotice(notice: UiText) {
+        noticeJob?.cancel()
+        _editState.value = _editState.value.copy(notice = notice)
+        noticeJob =
+            viewModelScope.launch {
+                delay(NOTICE_DURATION_MS)
+                _editState.value = _editState.value.copy(notice = null)
+            }
+    }
+
+    private fun resetEditState() {
+        noticeJob?.cancel()
+        noticeJob = null
+        undoStack.clear()
+        _editState.value = TrackEditUiState()
+    }
+
+    /** 正在编辑的是不是「今天」，且服务确实在记。 */
+    private fun isRecording(dateKey: String): Boolean =
+        recordingState.state.value == RecordingState.RECORDING &&
+            dateKey == DayKeys.of(System.currentTimeMillis()).value
+
     private data class DaySource(
         val points: List<TrackPointEntity>,
         val stays: List<StaySegmentEntity>,
@@ -238,6 +476,7 @@ class DayDetailViewModel(
         dateKey: String,
         source: DaySource,
         route: RouteOverride?,
+        edit: TrackEdit?,
     ): DayDetailUiState {
         val points = source.points
         val stays = source.stays
@@ -316,12 +555,14 @@ class DayDetailViewModel(
             }
         // 精度筛、毛刺修复、停留吸附、切段都在 TrackDisplay 里做，
         // 与今日页共用同一套，避免两处画出来的线不一样。
-        // 有纠偏结果时只替换驾车时间窗，窗口外仍按原始点画。
+        // 有手动微调时它优先级最高；否则有纠偏结果时只替换驾车时间窗，
+        // 窗口外仍按原始点画。
         val segments =
             TrackDisplay.segments(
                 samples,
                 stays.map { it.toStaySegment() },
                 route,
+                edit,
             )
         val geoPoints = segments.flatten()
         // 每天每个地点一个标记：同一天里「出门前在家」「回来后还在家」是两段停留，
@@ -347,12 +588,20 @@ class DayDetailViewModel(
                 },
             stayMarkers = stayPlan.markers,
             stayCentroids = stayPlan.centroids,
-            accessibilitySummary = buildAccessibilitySummary(geoPoints, stays, segments.size),
+            accessibilitySummary =
+                buildAccessibilitySummary(
+                    points = geoPoints,
+                    stays = stays,
+                    segmentCount = segments.size,
+                    edited = edit != null,
+                ),
             loading = false,
             canCorrectRoute =
                 correctionClient.configured &&
                     TrackCorrection.drivingRuns(samples).isNotEmpty(),
             routeOverride = route,
+            hasManualEdit = edit != null,
+            canEditTrack = TrackEditOps.isEditable(segments),
         )
     }
 
@@ -377,6 +626,7 @@ class DayDetailViewModel(
         points: List<GeoPoint>,
         stays: List<StaySegmentEntity>,
         segmentCount: Int,
+        edited: Boolean = false,
     ): List<UiText> {
         if (points.isEmpty()) return emptyList()
         val parts = mutableListOf<UiText>(UiText.Res(R.string.map_summary_title))
@@ -385,6 +635,8 @@ class DayDetailViewModel(
         if (segmentCount > 1) {
             parts += UiText.Res(R.string.map_summary_segments, listOf(segmentCount))
         }
+        // 读屏用户拿到的信息不能比视觉用户少：这条线被人手动改过，要明说。
+        if (edited) parts += UiText.Res(R.string.map_summary_edited)
         return parts
     }
 

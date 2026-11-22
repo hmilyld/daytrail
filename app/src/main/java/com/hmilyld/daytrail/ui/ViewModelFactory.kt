@@ -35,6 +35,7 @@ fun appViewModelFactory(container: AppContainer): ViewModelProvider.Factory =
             DayDetailViewModel(
                 repository = container.trackRepository,
                 correctionClient = container.grasproadClient,
+                recordingState = container.recordingState,
             )
         }
         initializer {
