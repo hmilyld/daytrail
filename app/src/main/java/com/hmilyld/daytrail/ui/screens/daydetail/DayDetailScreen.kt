@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -235,7 +236,10 @@ private fun DayDetailContent(
 
             when {
                 editing ->
-                    Box(modifier = Modifier.fillMaxSize()) {
+                    // 工具条排在布局流里（地图下方），不叠在地图上：
+                    // 整屏宽的浮层会盖住高德左下角的 logo 与版权，
+                    // SDK 条款不允许遮挡（见 MapAccessibilityOverlay 的同一条注释）。
+                    Column(modifier = Modifier.fillMaxSize()) {
                         TrackMapPane(
                             state = state,
                             amap = amap,
@@ -244,7 +248,10 @@ private fun DayDetailContent(
                             mapAvailable = mapAvailable,
                             expanded = true,
                             onToggleFullscreen = {},
-                            modifier = Modifier.fillMaxSize(),
+                            modifier =
+                                Modifier
+                                    .weight(1f)
+                                    .fillMaxWidth(),
                             editState = editState,
                             onSelectVertex = onSelectVertex,
                             onMoveVertex = onMoveVertex,
@@ -256,7 +263,7 @@ private fun DayDetailContent(
                             onDelete = onDeleteVertex,
                             onCancel = { confirmDiscard = true },
                             onSave = onSaveEdit,
-                            modifier = Modifier.align(Alignment.BottomCenter),
+                            modifier = Modifier.fillMaxWidth(),
                         )
                     }
 
@@ -691,45 +698,60 @@ private fun ManualEditRow(
 ) {
     if (!state.hasManualEdit && !canEditTrack) return
 
-    Row(
+    // 两行：说明占满一行，动作放下一行靠右。
+    // 挤在一行时，长提示（「拖动顶点修正画出来的线，不影响统计与导出」）
+    // 在 360dp 宽的机器上会折成两三行，把按钮压到只剩几个字。
+    Column(
         modifier = modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(TrailSpacing.sm),
+        verticalArrangement = Arrangement.spacedBy(TrailSpacing.xs),
     ) {
-        Icon(
-            imageVector = Icons.Outlined.Edit,
-            contentDescription = null,
-            modifier = Modifier.size(16.dp),
-            tint =
-                if (state.hasManualEdit) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-        )
-        Text(
-            text =
-                if (state.hasManualEdit) {
-                    stringResource(R.string.day_detail_edit_done)
-                } else {
-                    stringResource(R.string.day_detail_edit_track_hint)
-                },
-            style = MaterialTheme.typography.labelSmall,
-            color =
-                if (state.hasManualEdit) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-            modifier = Modifier.weight(1f),
-        )
-        if (state.hasManualEdit) {
-            TextButton(onClick = onRestoreEdit) {
-                Text(stringResource(R.string.day_detail_edit_restore))
-            }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(TrailSpacing.sm),
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Edit,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+                tint =
+                    if (state.hasManualEdit) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+            )
+            Text(
+                text =
+                    if (state.hasManualEdit) {
+                        stringResource(R.string.day_detail_edit_done)
+                    } else {
+                        stringResource(R.string.day_detail_edit_track_hint)
+                    },
+                style = MaterialTheme.typography.labelSmall,
+                color =
+                    if (state.hasManualEdit) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                modifier = Modifier.weight(1f),
+            )
         }
-        TextButton(onClick = onBeginEdit, enabled = canEditTrack) {
-            Text(stringResource(R.string.day_detail_edit_track))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(TrailSpacing.sm),
+        ) {
+            Spacer(modifier = Modifier.weight(1f))
+            if (state.hasManualEdit) {
+                TextButton(onClick = onRestoreEdit) {
+                    Text(stringResource(R.string.day_detail_edit_restore))
+                }
+            }
+            TextButton(onClick = onBeginEdit, enabled = canEditTrack) {
+                Text(stringResource(R.string.day_detail_edit_track))
+            }
         }
     }
 }

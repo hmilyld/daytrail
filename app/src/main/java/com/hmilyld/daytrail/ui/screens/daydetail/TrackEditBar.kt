@@ -1,7 +1,6 @@
 package com.hmilyld.daytrail.ui.screens.daydetail
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -30,8 +29,13 @@ import com.hmilyld.daytrail.ui.theme.TrailSpacing
 /**
  * 手动微调的工具条。
  *
- * 常驻在编辑态地图的底部：说明当前该做什么、撤销/删除、放弃与保存。
- * 和地图一起铺满整屏，所以 inset 要自己避让（编辑态外层 Scaffold 不消费 inset）。
+ * 说明当前该做什么、撤销/删除、放弃与保存。
+ *
+ * **它必须排在布局流里（地图下方），不能叠在地图上**：高德 logo 与版权固定在
+ * 地图左下角，整屏宽的浮层压上去会违反 SDK 条款（不得遮挡 logo），
+ * 这也是 `MapAccessibilityOverlay` 一律放到右下角的原因。
+ *
+ * 编辑态外层 Scaffold 不消费 inset，所以底部与左右的安全区要自己避让。
  */
 @Composable
 fun TrackEditBar(
@@ -55,89 +59,84 @@ fun TrackEditBar(
             MaterialTheme.colorScheme.onSurfaceVariant
         }
 
-    Box(
-        modifier = modifier.fillMaxWidth(),
-        contentAlignment = Alignment.BottomCenter,
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        shape = MaterialTheme.shapes.large,
+        tonalElevation = 3.dp,
+        modifier =
+            modifier
+                .windowInsetsPadding(
+                    WindowInsets.safeDrawing.only(
+                        WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal,
+                    ),
+                ).padding(TrailSpacing.md)
+                .fillMaxWidth(),
     ) {
-        Surface(
-            color = MaterialTheme.colorScheme.surface,
-            shape = MaterialTheme.shapes.large,
-            tonalElevation = 3.dp,
+        Column(
             modifier =
                 Modifier
-                    .windowInsetsPadding(
-                        WindowInsets.safeDrawing.only(
-                            WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal,
-                        ),
-                    ).padding(TrailSpacing.md)
-                    .fillMaxWidth(),
+                    .fillMaxWidth()
+                    .padding(horizontal = TrailSpacing.lg, vertical = TrailSpacing.md),
+            verticalArrangement = Arrangement.spacedBy(TrailSpacing.sm),
         ) {
-            Column(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = TrailSpacing.lg, vertical = TrailSpacing.md),
-                verticalArrangement = Arrangement.spacedBy(TrailSpacing.sm),
+            Text(
+                text = hint,
+                style = MaterialTheme.typography.labelMedium,
+                color = hintColor,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(TrailSpacing.sm),
             ) {
-                Text(
-                    text = hint,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = hintColor,
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(TrailSpacing.sm),
+                TextButton(
+                    onClick = onUndo,
+                    enabled = state.undoDepth > 0 && !state.saving,
+                    modifier = Modifier.heightIn(min = TOUCH_MIN),
                 ) {
+                    Text(stringResource(R.string.edit_action_undo))
+                }
+                // 「删除」只在选中顶点时出现：常驻会让工具条一直挤着，
+                // 而且没有选中时它本来就是无效操作。
+                if (state.hasSelection) {
                     TextButton(
-                        onClick = onUndo,
-                        enabled = state.undoDepth > 0 && !state.saving,
-                        modifier = Modifier.heightIn(min = TOUCH_MIN),
-                    ) {
-                        Text(stringResource(R.string.edit_action_undo))
-                    }
-                    // 「删除」只在选中顶点时出现：常驻会让工具条一直挤着，
-                    // 而且没有选中时它本来就是无效操作。
-                    if (state.hasSelection) {
-                        TextButton(
-                            onClick = onDelete,
-                            enabled = state.canDelete && !state.saving,
-                            modifier = Modifier.heightIn(min = TOUCH_MIN),
-                        ) {
-                            Text(
-                                text = stringResource(R.string.edit_action_delete),
-                                color =
-                                    if (state.canDelete) {
-                                        MaterialTheme.colorScheme.error
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    },
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.weight(1f))
-                    TextButton(
-                        onClick = onCancel,
-                        enabled = !state.saving,
-                        modifier = Modifier.heightIn(min = TOUCH_MIN),
-                    ) {
-                        Text(stringResource(R.string.edit_action_discard))
-                    }
-                    Button(
-                        onClick = onSave,
-                        enabled = !state.saving,
+                        onClick = onDelete,
+                        enabled = state.canDelete && !state.saving,
                         modifier = Modifier.heightIn(min = TOUCH_MIN),
                     ) {
                         Text(
-                            stringResource(
-                                if (state.saving) {
-                                    R.string.edit_action_saving
+                            text = stringResource(R.string.edit_action_delete),
+                            color =
+                                if (state.canDelete) {
+                                    MaterialTheme.colorScheme.error
                                 } else {
-                                    R.string.edit_action_save
+                                    MaterialTheme.colorScheme.onSurfaceVariant
                                 },
-                            ),
                         )
                     }
+                }
+                Spacer(modifier = Modifier.weight(1f))
+                TextButton(
+                    onClick = onCancel,
+                    enabled = !state.saving,
+                    modifier = Modifier.heightIn(min = TOUCH_MIN),
+                ) {
+                    Text(stringResource(R.string.edit_action_discard))
+                }
+                Button(
+                    onClick = onSave,
+                    enabled = !state.saving,
+                    modifier = Modifier.heightIn(min = TOUCH_MIN),
+                ) {
+                    Text(
+                        stringResource(
+                            if (state.saving) {
+                                R.string.edit_action_saving
+                            } else {
+                                R.string.edit_action_save
+                            },
+                        ),
+                    )
                 }
             }
         }

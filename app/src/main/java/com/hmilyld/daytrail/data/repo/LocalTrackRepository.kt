@@ -75,11 +75,16 @@ class LocalTrackRepository(
                     gapDao.deleteDay(batch.dayKey.value)
                     dayDao.deleteDay(batch.dayKey.value)
                     routeDao.deleteDay(batch.dayKey.value)
-                    // 手动微调是针对「原来那条线」画的，数据被整体替换后必须一起清，
-                    // 否则新导入的轨迹会顶着旧的修正形状显示。
+                }
+                val insertedForDay = pointDao.insertAll(batch.points).count { it > 0 }
+                inserted += insertedForDay
+                // 手动微调是针对「原来那条线」画的。覆盖语义下旧点全换了；
+                // 合并语义下新点的时间戳通常早于截断点，会被尾部条件过滤掉、
+                // 根本画不出来——用户会以为导入没生效。所以只要这一天真的被改了
+                // （写入了新点或整体替换）就清掉修正；全是重复点的空合并则保留。
+                if (replaceExisting || insertedForDay > 0) {
                     editDao.deleteDay(batch.dayKey.value)
                 }
-                inserted += pointDao.insertAll(batch.points).count { it > 0 }
                 // 在事务内重算：导入完成后界面立刻能看到汇总，
                 // 也避免出现「点写进去了、track_day 还是空的」的中间态。
                 //

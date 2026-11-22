@@ -127,13 +127,13 @@
     <string name="day_detail_edit_restore">还原</string>
     <string name="edit_hint">拖动顶点调整位置；点轨迹线可以加一个点</string>
     <string name="edit_insert_miss">请点在轨迹线上</string>
-    <string name="edit_no_track">这一天还没有可调整的轨迹</string>
     <string name="edit_recording_notice">正在记录：编辑期间的新点暂不显示，保存后会接着画</string>
     <string name="edit_action_undo">撤销</string>
     <string name="edit_action_delete">删除这个点</string>
     <string name="edit_action_discard">放弃</string>
     <string name="edit_action_save">保存</string>
     <string name="edit_action_saving">保存中…</string>
+    <string name="edit_save_failed">保存失败，请重试</string>
     <string name="edit_discard_title">放弃这次修改？</string>
     <string name="edit_discard_body">已拖动的顶点不会保存，已经保存过的修正也不受影响。</string>
     <string name="edit_discard_confirm">放弃修改</string>

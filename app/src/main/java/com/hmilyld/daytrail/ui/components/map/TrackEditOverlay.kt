@@ -15,6 +15,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.amap.api.maps.AMap
+import com.amap.api.maps.model.BitmapDescriptor
 import com.amap.api.maps.model.CameraPosition
 import com.amap.api.maps.model.LatLng
 import com.amap.api.maps.model.Marker
@@ -69,6 +70,7 @@ fun TrackEditOverlay(
     val currentOnSelect by rememberUpdatedState(onSelect)
     val currentOnMove by rememberUpdatedState(onMove)
     val currentOnInsert by rememberUpdatedState(onInsert)
+    val currentSelected by rememberUpdatedState(selected)
 
     val holder = remember { EditOverlayHandle() }
     var fittedKey by remember { mutableStateOf<Any?>(null) }
@@ -151,7 +153,7 @@ fun TrackEditOverlay(
         }
     }
 
-    LaunchedEffect(amap, segments, selected, handleIcon, selectedIcon, polylineColor) {
+    LaunchedEffect(amap, segments, handleIcon, selectedIcon, polylineColor) {
         val map = amap ?: return@LaunchedEffect
         holder.clear()
         holder.segments = segments
@@ -176,17 +178,25 @@ fun TrackEditOverlay(
                     map.addMarker(
                         MarkerOptions()
                             .position(LatLng(point.latitude, point.longitude))
-                            .icon(if (selected == vertex) selectedIcon else handleIcon)
+                            .icon(if (currentSelected == vertex) selectedIcon else handleIcon)
                             .anchor(0.5f, 0.5f)
                             .draggable(true)
                             .zIndex(HANDLE_Z_INDEX),
                     )
                 holder.markers += marker
                 holder.vertexOf[marker.id] = vertex
+                holder.markerOfVertex[vertex] = marker
             }
         }
+        holder.highlighted = currentSelected
 
         runCatching { holder.applyVisibility(map) }
+    }
+
+    // 选中只换两个手柄的图标。把 selected 放进上面那个 effect 的 key 里，
+    // 会让每点一次顶点就把整层覆盖物拆了重建（一天几百个 Marker，明显掉帧）。
+    LaunchedEffect(selected, handleIcon, selectedIcon) {
+        holder.highlight(selected, handleIcon, selectedIcon)
     }
 
     LaunchedEffect(amap, fitKey, segments.isNotEmpty()) {
@@ -207,8 +217,26 @@ private class EditOverlayHandle {
     /** 手柄 → 顶点。用 `Marker.id` 做键：拖动回调只能拿到 Marker。 */
     val vertexOf = mutableMapOf<String, TrackVertex>()
 
+    /** 顶点 → 手柄。改选中态时只动这两个，不重建整层。 */
+    val markerOfVertex = mutableMapOf<TrackVertex, Marker>()
+
+    /** 当前高亮的手柄，用于把上一个换回普通图标。 */
+    var highlighted: TrackVertex? = null
+
     /** 当前折线。拖动过程中在内存里推进，保存时才交给 ViewModel。 */
     var segments: List<List<GeoPoint>> = emptyList()
+
+    /** 选中态变化：只换上一个和这一个的图标。 */
+    fun highlight(
+        vertex: TrackVertex?,
+        handleIcon: BitmapDescriptor,
+        selectedIcon: BitmapDescriptor,
+    ) {
+        if (highlighted == vertex) return
+        highlighted?.let { old -> runCatching { markerOfVertex[old]?.setIcon(handleIcon) } }
+        vertex?.let { new -> runCatching { markerOfVertex[new]?.setIcon(selectedIcon) } }
+        highlighted = vertex
+    }
 
     /** 拖动时只更新被拖那一段，不重建整层覆盖物。 */
     fun redrawSegment(index: Int) {
@@ -233,6 +261,8 @@ private class EditOverlayHandle {
         polylines.clear()
         markers.clear()
         vertexOf.clear()
+        markerOfVertex.clear()
+        highlighted = null
     }
 }
 

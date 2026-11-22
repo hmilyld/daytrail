@@ -94,6 +94,14 @@ data class DayDetailUiState(
     val hasManualEdit: Boolean = false,
     /** 有没有可以微调的折线。地图不可用时由界面再挡一次。 */
     val canEditTrack: Boolean = false,
+    /**
+     * 这一天最后一条原始点的时间戳。
+     *
+     * 手动微调用它当截断点，因为它和 [trackSegments] 出自**同一次快照**。
+     * 换成「进编辑时再查一次库」的话，两次读之间新采到的点会既不在基线、
+     * 也不在增量尾部（尾部条件是 `ts > cutoff`），从此在地图上消失。
+     */
+    val lastSampleMs: Long? = null,
 ) {
     val hasTrack: Boolean get() = trackSegments.any { it.size >= 2 }
 }
@@ -291,30 +299,28 @@ class DayDetailViewModel(
      * 抽稀到 5 米和地图折线一致，否则会出现「拐角没有手柄」和
      * 「拖了没变化」（点被抽稀删掉）两种困惑。
      *
-     * 截断点取这一刻最后一条原始点的时间戳：之后再采到的点属于「增量」，
-     * 保存后接着画，不会被烘进编辑结果。
+     * 截断点取同一次快照里最后一个原始点的 `ts`，不重新查库：之后再采到的点属于
+     * 「增量」，保存后接着画，不会被烘进编辑结果。
      */
     fun beginEdit() {
         val dateKey = loadedKey ?: return
         if (_editState.value.active) return
 
-        viewModelScope.launch {
-            val key = DayKeys.parse(dateKey) ?: return@launch
-            val baseline = TrackEditOps.baseline(_uiState.value.trackSegments)
-            if (!TrackEditOps.isEditable(baseline)) {
-                _editState.value = TrackEditUiState(notice = UiText.Res(R.string.edit_no_track))
-                return@launch
-            }
+        val state = _uiState.value
+        val baseline = TrackEditOps.baseline(state.trackSegments)
+        val lastSample = state.lastSampleMs
+        // lastSample 为空只可能发生在「线段来自编辑结果、原始点却被删光」这种
+        // 数据异常上；这时不进入编辑，避免用一个错误的截断点把整条线画两遍。
+        if (!TrackEditOps.isEditable(baseline) || lastSample == null) return
 
-            undoStack.clear()
-            editCutoffMs = repository.pointsOfDay(key).maxOfOrNull { it.timestampMs } ?: 0L
-            _editState.value =
-                TrackEditUiState(
-                    active = true,
-                    segments = baseline,
-                    recording = isRecording(dateKey),
-                )
-        }
+        undoStack.clear()
+        editCutoffMs = lastSample
+        _editState.value =
+            TrackEditUiState(
+                active = true,
+                segments = baseline,
+                recording = isRecording(dateKey),
+            )
     }
 
     /** 选中一个顶点。再点一次取消选中。 */
@@ -398,17 +404,27 @@ class DayDetailViewModel(
         _editState.value = state.copy(saving = true)
         viewModelScope.launch {
             val key = DayKeys.parse(dateKey)
-            if (key != null) {
-                repository.saveEdit(
-                    key,
-                    TrackEdit(
-                        segments = state.segments,
-                        cutoffMs = editCutoffMs,
-                        updatedAtMs = System.currentTimeMillis(),
-                    ),
-                )
+            val result =
+                runCatching {
+                    if (key != null) {
+                        repository.saveEdit(
+                            key,
+                            TrackEdit(
+                                segments = state.segments,
+                                cutoffMs = editCutoffMs,
+                                updatedAtMs = System.currentTimeMillis(),
+                            ),
+                        )
+                    }
+                }
+            if (result.isFailure) {
+                // 写库失败必须让用户看见：否则工具条停在「保存中…」、
+                // 按钮全禁用，用户只能猜是不是卡住了。
+                _editState.value = _editState.value.copy(saving = false)
+                showNotice(UiText.Res(R.string.edit_save_failed))
+            } else {
+                resetEditState()
             }
-            resetEditState()
         }
     }
 
@@ -602,6 +618,7 @@ class DayDetailViewModel(
             routeOverride = route,
             hasManualEdit = edit != null,
             canEditTrack = TrackEditOps.isEditable(segments),
+            lastSampleMs = endMs,
         )
     }
 
