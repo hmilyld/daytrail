@@ -32,6 +32,7 @@ param(
     [switch]$DryRun,
     [switch]$Install,
     [switch]$Advanced,
+    [switch]$UseChinaMirrors,
     [switch]$Help
 )
 
@@ -70,7 +71,7 @@ $script:DistPath = Join-Path $root 'dist'
 
 # 只要给了任意参数就进入无人值守模式：AI 调用时不能卡在 Read-Host 上。
 $script:NonInteractive = [bool](
-    $Json -or $Yes -or $NoBuild -or $DryRun -or $Name -or $Id -or $Package -or
+    $Json -or $Yes -or $NoBuild -or $DryRun -or $UseChinaMirrors -or $Name -or $Id -or $Package -or
         $KeyRelease -or $KeyWeb -or $KeyDebug -or $IconColor
 )
 
@@ -96,6 +97,7 @@ AI 或自动化（全程不提问）：
   -IconColor <#RRGGBB>  图标底色，例如 #E4572E
   -NoBuild              只做准备（改名、生成签名、出卡片），不编译
   -Install              编译完成后安装到已连接的手机
+  -UseChinaMirrors      下载很慢或打不开时使用国内镜像（阿里云 Maven + 腾讯云 Gradle）
   -Json                 结束时在最后输出一行 JSON
   -DryRun               只打印将要修改的内容，不写任何文件
   -Yes                  跳过确认
@@ -386,6 +388,29 @@ function Write-Result {
         Set-TextFile (Join-Path $script:DistPath 'setup-result.json') ($text + "`n")
     }
     if ($Json) { [Console]::Out.WriteLine($text) }
+}
+
+# 国内网络加速：把 Gradle 发行包指到腾讯云镜像，并在本次构建里挂上阿里云 Maven 镜像。
+# 只改 gradle-wrapper.properties 一行；想还原执行
+#   git checkout -- gradle/wrapper/gradle-wrapper.properties
+function Enable-ChinaMirrors {
+    $wrapper = Join-Path $root 'gradle/wrapper/gradle-wrapper.properties'
+    if (-not (Test-Path $wrapper)) {
+        Write-Warn '找不到 gradle-wrapper.properties，跳过 Gradle 镜像'
+        return
+    }
+    $text = Get-TextFile $wrapper
+    if ($text.Contains('services.gradle.org/distributions/')) {
+        $text = $text.Replace(
+            'services.gradle.org/distributions/',
+            'mirrors.cloud.tencent.com/gradle/'
+        )
+        Set-TextFile $wrapper $text
+        Write-Ok '已把 Gradle 下载地址换成腾讯云镜像（还原：重新解压一次 ZIP，或执行 git checkout -- gradle/wrapper/gradle-wrapper.properties）'
+    } else {
+        Write-Ok 'Gradle 下载地址已不是官方源，保持原样'
+    }
+    Write-Ok '本次构建会通过阿里云镜像下载依赖（不改项目文件）'
 }
 
 # ---------------------------------------------------------------- 准备阶段
@@ -819,6 +844,15 @@ if ($keysMissing) {
     }
 }
 
+$mirrorEnabled = [bool]$UseChinaMirrors
+if (-not $script:NonInteractive -and -not $mirrorEnabled) {
+    Write-Host ''
+    Write-Host '  如果下载 Gradle 或依赖特别慢、或一直失败，可以改用国内镜像（阿里云 + 腾讯云）。'
+    $answer = Read-Host '  这次使用国内镜像吗？（输入 y 使用，直接回车 = 不用）'
+    $mirrorEnabled = $answer -match '^(y|Y|yes|YES)$'
+}
+if ($mirrorEnabled) { Enable-ChinaMirrors }
+
 if (-not $Yes) {
     Write-Host ''
     Write-Host '  准备开始编译。第一次会下载很多文件，通常要 10 到 30 分钟。'
@@ -830,12 +864,18 @@ $gradlew = Join-Path $root 'gradlew.bat'
 $task = if ($finalType -eq 'debug') { ':app:assembleDebug' } else { ':app:assembleRelease' }
 New-Item -ItemType Directory -Force -Path $script:DistPath | Out-Null
 
+$gradleArgs = @()
+if ($mirrorEnabled) {
+    $gradleArgs += @('-I', (Join-Path $root 'scripts/china-mirrors.gradle'))
+}
+$gradleArgs += @($task, '--console=plain')
+
 Write-Host ''
 Write-Host "  正在编译（$task）……" -ForegroundColor Cyan
 $previous = $ErrorActionPreference
 $ErrorActionPreference = 'Continue'
 try {
-    & $gradlew $task --console=plain 2>&1 | Tee-Object -FilePath $logPath
+    & $gradlew @gradleArgs 2>&1 | Tee-Object -FilePath $logPath
     $buildCode = $LASTEXITCODE
 } finally {
     $ErrorActionPreference = $previous
@@ -851,12 +891,13 @@ if ($buildCode -ne 0) {
     Write-Host "  详细日志已保存在：$logPath" -ForegroundColor Yellow
     Write-Host '  把上面这个文件发给帮你的人，里面不会暴露你的高德 Key。' -ForegroundColor Yellow
     Write-Result -Data ([ordered]@{
-            ok          = $false
-            built       = $false
-            appName     = $finalName
-            packageName = $finalPackage
-            type        = $finalType
-            logPath     = $logPath
+            ok           = $false
+            built        = $false
+            appName      = $finalName
+            packageName  = $finalPackage
+            type         = $finalType
+            chinaMirrors = $mirrorEnabled
+            logPath      = $logPath
         })
     exit 3
 }
@@ -945,6 +986,7 @@ Write-Result -Data ([ordered]@{
         sha1Release  = $sha1Release
         sha1Debug    = $sha1Debug
         iconColor    = $finalIconColor
+        chinaMirrors = $mirrorEnabled
         apkPath      = $apkPath
         cardPath     = (Join-Path $script:DistPath 'amap-fill-card.txt')
         logPath      = $logPath

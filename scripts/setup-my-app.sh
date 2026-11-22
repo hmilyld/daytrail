@@ -50,6 +50,7 @@ YES=0
 DRY_RUN=0
 INSTALL=0
 ADVANCED=0
+USE_CN_MIRRORS=0
 
 show_help() {
     cat <<'EOF'
@@ -72,6 +73,7 @@ AI 或自动化（全程不提问）：
   --icon-color <#RRGGBB> 图标底色，例如 #E4572E
   --no-build             只做准备（改名、生成签名、出卡片），不编译
   --install              编译完成后安装到已连接的手机
+  --use-china-mirrors    下载很慢或打不开时使用国内镜像（阿里云 Maven + 腾讯云 Gradle）
   --json                 结束时输出一行 JSON，并写入 dist/setup-result.json
   --dry-run              只打印将要修改的内容，不写任何文件
   --yes                  跳过确认
@@ -102,6 +104,7 @@ while [ $# -gt 0 ]; do
         --yes) YES=1; shift ;;
         --dry-run) DRY_RUN=1; shift ;;
         --install) INSTALL=1; shift ;;
+        --use-china-mirrors) USE_CN_MIRRORS=1; shift ;;
         --advanced) ADVANCED=1; shift ;;
         --help|-h) show_help; exit 0 ;;
         *) die "不认识的参数：$1（用 --help 看用法）" 2 ;;
@@ -116,6 +119,7 @@ esac
 # 只要给了任意参数就进入无人值守模式：AI 调用时不能卡在 read 上。
 NON_INTERACTIVE=0
 if [ "$JSON" -eq 1 ] || [ "$YES" -eq 1 ] || [ "$NO_BUILD" -eq 1 ] || [ "$DRY_RUN" -eq 1 ] ||
+    [ "$USE_CN_MIRRORS" -eq 1 ] ||
     [ -n "$NAME" ] || [ -n "$ID" ] || [ -n "$PACKAGE" ] || [ -n "$KEY_RELEASE" ] ||
     [ -n "$KEY_WEB" ] || [ -n "$KEY_DEBUG" ] || [ -n "$ICON_COLOR" ]; then
     NON_INTERACTIVE=1
@@ -317,6 +321,24 @@ write_result() {
     if [ "$JSON" -eq 1 ]; then
         printf '%s\n' "$text"
     fi
+}
+
+# 国内网络加速：把 Gradle 发行包指到腾讯云镜像，并在本次构建里挂上阿里云 Maven 镜像。
+# 只改 gradle-wrapper.properties 一行；想还原执行
+#   git checkout -- gradle/wrapper/gradle-wrapper.properties
+enable_china_mirrors() {
+    local wrapper="$ROOT/gradle/wrapper/gradle-wrapper.properties"
+    if [ ! -f "$wrapper" ]; then
+        warn '找不到 gradle-wrapper.properties，跳过 Gradle 镜像'
+        return 0
+    fi
+    if grep -q 'services.gradle.org/distributions/' "$wrapper"; then
+        perl -pi -e 's{services\.gradle\.org/distributions/}{mirrors.cloud.tencent.com/gradle/}' "$wrapper"
+        ok '已把 Gradle 下载地址换成腾讯云镜像（还原：重新解压一次 ZIP，或执行 git checkout -- gradle/wrapper/gradle-wrapper.properties）'
+    else
+        ok 'Gradle 下载地址已不是官方源，保持原样'
+    fi
+    ok '本次构建会通过阿里云镜像下载依赖（不改项目文件）'
 }
 
 # ---------------------------------------------------------------- 环境检查
@@ -754,6 +776,20 @@ if [ "$keys_missing" -eq 1 ]; then
     fi
 fi
 
+MIRROR_ENABLED=$USE_CN_MIRRORS
+if [ "$NON_INTERACTIVE" -eq 0 ] && [ "$MIRROR_ENABLED" -eq 0 ]; then
+    printf '\n'
+    info '如果下载 Gradle 或依赖特别慢、或一直失败，可以改用国内镜像（阿里云 + 腾讯云）。'
+    read -r -p '  这次使用国内镜像吗？（输入 y 使用，直接回车 = 不用）' answer || answer=''
+    case "$answer" in
+        y|Y|yes|YES) MIRROR_ENABLED=1 ;;
+    esac
+fi
+if [ "$MIRROR_ENABLED" -eq 1 ]; then
+    enable_china_mirrors
+fi
+if [ "$MIRROR_ENABLED" -eq 1 ]; then mirror_json=true; else mirror_json=false; fi
+
 if [ "$YES" -eq 0 ]; then
     printf '\n'
     info '准备开始编译。第一次会下载很多文件，通常要 10 到 30 分钟。'
@@ -765,9 +801,13 @@ TASK=':app:assembleRelease'
 [ "$FINAL_TYPE" = 'debug' ] && TASK=':app:assembleDebug'
 mkdir -p "$DIST"
 
+GRADLE_ARGS=()
+if [ "$MIRROR_ENABLED" -eq 1 ]; then GRADLE_ARGS+=("-I" "scripts/china-mirrors.gradle"); fi
+GRADLE_ARGS+=("$TASK" "--console=plain")
+
 printf '\n  正在编译（%s）……\n' "$TASK"
 set +e
-./gradlew "$TASK" --console=plain 2>&1 | tee "$LOG_PATH"
+./gradlew "${GRADLE_ARGS[@]}" 2>&1 | tee "$LOG_PATH"
 build_code=${PIPESTATUS[0]}
 set -e
 
@@ -780,8 +820,8 @@ if [ "$build_code" -ne 0 ]; then
     printf '\n'
     warn "详细日志已保存在：$LOG_PATH"
     warn '把这个文件发给帮你的人，里面不会暴露你的高德 Key。'
-    write_result "$(printf '{"ok":false,"built":false,"appName":"%s","packageName":"%s","type":"%s","logPath":"%s"}' \
-        "$(json_escape "$FINAL_NAME")" "$(json_escape "$FINAL_PACKAGE")" "$FINAL_TYPE" "$(json_escape "$LOG_PATH")")"
+    write_result "$(printf '{"ok":false,"built":false,"appName":"%s","packageName":"%s","type":"%s","chinaMirrors":%s,"logPath":"%s"}' \
+        "$(json_escape "$FINAL_NAME")" "$(json_escape "$FINAL_PACKAGE")" "$FINAL_TYPE" "$mirror_json" "$(json_escape "$LOG_PATH")")"
     exit 3
 fi
 
@@ -843,7 +883,7 @@ info '  · 想换成自己的图片图标：看 docs/build-your-own.md 的「换
 info "  · 这个应用的包名：$FINAL_PACKAGE"
 printf '\n'
 
-write_result "$(printf '{"ok":true,"built":true,"appName":"%s","packageName":"%s","debugPackage":"%s","type":"%s","sha1Release":"%s","sha1Debug":"%s","iconColor":"%s","apkPath":"%s","cardPath":"%s","logPath":"%s"}' \
+write_result "$(printf '{"ok":true,"built":true,"appName":"%s","packageName":"%s","debugPackage":"%s","type":"%s","sha1Release":"%s","sha1Debug":"%s","iconColor":"%s","chinaMirrors":%s,"apkPath":"%s","cardPath":"%s","logPath":"%s"}' \
     "$(json_escape "$FINAL_NAME")" "$(json_escape "$FINAL_PACKAGE")" "$(json_escape "$DEBUG_PACKAGE")" \
     "$FINAL_TYPE" "$(json_escape "$SHA1_RELEASE")" "$(json_escape "$SHA1_DEBUG")" \
-    "$FINAL_ICON_COLOR" "$(json_escape "$APK_PATH")" "$(json_escape "$CARD")" "$(json_escape "$LOG_PATH")")"
+    "$FINAL_ICON_COLOR" "$mirror_json" "$(json_escape "$APK_PATH")" "$(json_escape "$CARD")" "$(json_escape "$LOG_PATH")")"
