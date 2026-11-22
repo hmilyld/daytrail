@@ -63,7 +63,7 @@ AI 或自动化（全程不提问）：
   bash scripts/setup-my-app.sh --name 山行 --id zhangsan --type release --no-build --json
 
 参数：
-  --name <显示名>        手机桌面上显示的名字，中文即可（最多 12 个字）
+  --name <显示名>        手机桌面上显示的名字，中文即可（建议 12 个字以内，最多 24）
   --id <英文昵称>        小写字母或数字，用来拼包名 com.<昵称>.daytrail
   --package <完整包名>   直接指定包名，优先于 --id
   --type release|debug   安装包类型，默认 release（只要两个高德 Key）
@@ -161,9 +161,10 @@ assert_app_name() {
     local value chars
     value=$(printf '%s' "$1" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
     [ -n "$value" ] || die '应用名不能为空' 2
-    # bash 3.2 的 ${#value} 按字节算，中文名会被高估，这里用 wc -m 按字符数判断。
-    chars=$(printf '%s' "$value" | wc -m | tr -d ' ')
-    if [ "$chars" -gt 24 ]; then die '应用名太长了，请控制在 12 个字以内' 2; fi
+    # bash 3.2 的 ${#value} 按字节算，中文名会被高估；用 perl 按字符数判断，
+    # 与终端 locale 无关（脚本本来就要用 perl 改 XML）。
+    chars=$(printf '%s' "$value" | perl -CS -ne 'print length')
+    if [ "$chars" -gt 24 ]; then die '应用名太长（最多 24 个字），建议控制在 12 个字以内' 2; fi
     if [ "$chars" -gt 12 ]; then printf '  [注意] 名字超过 12 个字，手机桌面可能显示不全\n' >&2; fi
     case "$value" in
         *'&'*|*'<'*|*'>'*|*'"'*|*"'"*) die '应用名里不能出现 & < > " 或单引号' 2 ;;
@@ -459,10 +460,17 @@ else
             esac
             while true; do
                 ask_text '请输入昵称' "$suggest_id"
-                if FINAL_PACKAGE=$(assert_package_name "com.$(assert_nickname "$ASK_RESULT").daytrail" 2>/dev/null); then
-                    break
+                if ! nick=$(assert_nickname "$ASK_RESULT" 2>/dev/null); then
+                    warn '昵称只能用小写字母和数字，并以字母开头，例如 zhangsan'
+                    continue
                 fi
-                warn '昵称只能用小写字母和数字，并以字母开头，例如 zhangsan'
+                candidate="com.$nick.daytrail"
+                if [ "$candidate" = "$DEFAULT_PACKAGE" ]; then
+                    warn "这个昵称得到的 $DEFAULT_PACKAGE 是本项目的包名，请换一个（例如后面加几个数字）"
+                    continue
+                fi
+                FINAL_PACKAGE="$candidate"
+                break
             done
         fi
 
@@ -531,8 +539,8 @@ else
             -keystore "$RELEASE_JKS" -storetype PKCS12 -alias "$KEY_ALIAS" \
             -keyalg RSA -keysize 4096 -validity 10950 \
             -storepass "$STORE_PASSWORD" -keypass "$STORE_PASSWORD" \
-            -dname 'CN=DayTrail, OU=Personal, O=Personal, L=Unknown, ST=Unknown, C=CN' >/dev/null 2>&1; then
-            die '生成签名文件失败（keytool 报错）。请把终端里的红字发给帮你的人'
+            -dname 'CN=DayTrail, OU=Personal, O=Personal, L=Unknown, ST=Unknown, C=CN'; then
+            die '生成签名文件失败（见上面的 keytool 报错）。请把报错整段发给帮你的人'
         fi
         cat >"$KEYSTORE_PROPERTIES" <<EOF
 storeFile=app/keystore/release.jks
@@ -672,9 +680,21 @@ if [ "$DRY_RUN" -eq 0 ]; then
     fi
 fi
 
-ok "正式版 Key：$(mask_key "$FINAL_KEY_RELEASE")"
+# 编译时真正生效的 SDK Key 取决于安装包类型：正式版用 AMAP_KEY_RELEASE，调试版用 AMAP_KEY_DEBUG。
+SDK_KEY_LABEL='正式版 Key'
+SDK_KEY_FOR_TYPE="$FINAL_KEY_RELEASE"
+if [ "$FINAL_TYPE" = 'debug' ]; then
+    SDK_KEY_LABEL='调试版 Key'
+    SDK_KEY_FOR_TYPE="$FINAL_KEY_DEBUG"
+fi
+KEYS_MISSING=0
+if [ -z "$SDK_KEY_FOR_TYPE" ] || [ -z "$FINAL_KEY_WEB" ]; then
+    KEYS_MISSING=1
+fi
+
+ok "$SDK_KEY_LABEL：$(mask_key "$SDK_KEY_FOR_TYPE")"
 ok "Web 服务 Key：$(mask_key "$FINAL_KEY_WEB")"
-if [ -z "$FINAL_KEY_RELEASE" ] || [ -z "$FINAL_KEY_WEB" ]; then
+if [ "$KEYS_MISSING" -eq 1 ]; then
     warn '还有 Key 没填。不影响编译，但地图、路线补全、地点名反查会用不了'
 fi
 
@@ -748,11 +768,7 @@ fi
 
 # 没有 Key 时默认不编译：先让用户去申请，回来再运行一次，
 # 避免让完全不懂的人白等一次 10–30 分钟的构建。
-keys_missing=0
-if [ -z "$FINAL_KEY_RELEASE" ] || [ -z "$FINAL_KEY_WEB" ]; then
-    keys_missing=1
-fi
-if [ "$keys_missing" -eq 1 ]; then
+if [ "$KEYS_MISSING" -eq 1 ]; then
     skip_build=1
     if [ "$NON_INTERACTIVE" -eq 0 ]; then
         read -r -p '  现在还没有高德 Key。先跳过编译，等申请回来再运行？（直接回车 = 是；输入 n = 现在就编一个没有地图的版本）' answer || answer=''
@@ -833,6 +849,8 @@ done
 if [ -z "$APK_PATH" ]; then
     warn '编译命令成功了，但没找到 APK。请把下面的目录内容发给帮你的人：'
     warn "  $ROOT/app/build/outputs/apk/$FINAL_TYPE"
+    write_result "$(printf '{"ok":false,"built":false,"reason":"apk-not-found","appName":"%s","packageName":"%s","type":"%s","logPath":"%s"}' \
+        "$(json_escape "$FINAL_NAME")" "$(json_escape "$FINAL_PACKAGE")" "$FINAL_TYPE" "$(json_escape "$LOG_PATH")")"
     exit 3
 fi
 
@@ -875,7 +893,7 @@ printf '  APK：%s\n' "$APK_PATH"
 info '装到手机：连数据线复制这个文件，或用微信/邮件发给自己，再用文件管理器点开安装。'
 info '手机上如果提示「禁止安装未知应用」，在提示里点「设置」允许即可。'
 printf '\n  还需要你做的事：\n'
-if [ -z "$FINAL_KEY_RELEASE" ] || [ -z "$FINAL_KEY_WEB" ]; then
+if [ "$KEYS_MISSING" -eq 1 ]; then
     info '  · 去高德申请 Key，然后重新运行本脚本填进来（现在地图是空白的）'
 fi
 info '  · 备份 app/keystore/release.jks 与 keystore.properties（丢了就不能覆盖升级）'

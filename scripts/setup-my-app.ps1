@@ -87,7 +87,7 @@ AI 或自动化（全程不提问）：
     -Name 山行 -Id zhangsan -Type release -NoBuild -Json
 
 参数：
-  -Name <显示名>        手机桌面上显示的名字，中文即可（最多 12 个字）
+  -Name <显示名>        手机桌面上显示的名字，中文即可（建议 12 个字以内，最多 24）
   -Id <英文昵称>        小写字母或数字，用来拼包名 com.<昵称>.daytrail
   -Package <完整包名>   直接指定包名，优先于 -Id
   -Type release|debug   安装包类型，默认 release（只要两个高德 Key）
@@ -101,9 +101,10 @@ AI 或自动化（全程不提问）：
   -Json                 结束时在最后输出一行 JSON
   -DryRun               只打印将要修改的内容，不写任何文件
   -Yes                  跳过确认
+  -Advanced             交互模式下允许直接输入完整包名
   -Help                 显示本说明
 
-改完想还原：git checkout -- gradle.properties app/src/main/res
+改完想还原：重新解压一次 ZIP，或 git checkout -- gradle.properties app/src/main/res
 '@
 }
 
@@ -224,7 +225,7 @@ function Get-StringResourceValue {
 }
 
 function Set-StringResourceValue {
-    param([string]$Key, [string]$Value, [switch]$LiteralFrom)
+    param([string]$Key, [string]$Value, [string]$From = '')
 
     $text = Get-TextFile $script:StringsPath
     $pattern = '(<string name="' + [regex]::Escape($Key) + '"[^>]*>)(.*?)(</string>)'
@@ -232,10 +233,15 @@ function Set-StringResourceValue {
     if (-not $match.Success) { throw "strings.xml 里找不到名为 $Key 的字符串" }
 
     $old = $match.Groups[2].Value
-    $newContent = if ($LiteralFrom) { $old.Replace($LiteralFrom, $Value) } else { $Value }
-    if ($LiteralFrom -and $newContent -eq $old) {
-        # 旧名字没有出现在这句正文里（例如用户之前改过名），退回替换项目原名。
-        $newContent = $old.Replace($script:DefaultName, $Value)
+    if ($From) {
+        # 正文里嵌着旧名字，只替换旧名字本身，保留句子其余部分。
+        $newContent = $old.Replace($From, $Value)
+        if ($newContent -eq $old) {
+            # 旧名字没有出现在这句正文里（例如用户之前改过名），退回替换项目原名。
+            $newContent = $old.Replace($script:DefaultName, $Value)
+        }
+    } else {
+        $newContent = $Value
     }
 
     $escaped = [System.Security.SecurityElement]::Escape($newContent)
@@ -293,7 +299,7 @@ function Assert-AppName {
     param([string]$Value)
     $Value = $Value.Trim()
     if ([string]::IsNullOrWhiteSpace($Value)) { throw '应用名不能为空' }
-    if ($Value.Length -gt 24) { throw '应用名太长了，请控制在 12 个字以内' }
+    if ($Value.Length -gt 24) { throw '应用名太长（最多 24 个字），建议控制在 12 个字以内' }
     if ($Value.Length -gt 12) { Write-Warn '名字超过 12 个字，手机桌面可能显示不全' }
     if ($Value -match '[&<>"'']') { throw '应用名里不能出现 & < > " 或单引号' }
     if ($Value -match '[\\/:*?|]') { throw '应用名里不能出现 \ / : * ? | 这些符号' }
@@ -628,6 +634,8 @@ $debugJks = Join-Path $root 'app/keystore/debug.jks'
 $sha1Debug = Get-KeystoreSha1 -Path $debugJks -Alias 'androiddebugkey' -Password 'android'
 
 $debugPackage = "$finalPackage.debug"
+$sha1ReleaseText = if ($sha1Release) { $sha1Release } else { '（还没生成，稍后重新运行本脚本）' }
+$sha1DebugText = if ($sha1Debug) { $sha1Debug } else { '（读不到 app/keystore/debug.jks）' }
 $card = @"
 DayTrail · 高德 Key 填写卡
 生成时间：$(Get-Date -Format 'yyyy-MM-dd HH:mm')
@@ -638,16 +646,16 @@ DayTrail · 高德 Key 填写卡
   调试版：$debugPackage
 
 SHA1：
-  正式版：$(if ($sha1Release) { $sha1Release } else { '（还没生成，稍后重新运行本脚本）' })
-  调试版：$(if ($sha1Debug) { $sha1Debug } else { '（读不到 app/keystore/debug.jks）' })
+  正式版：$sha1ReleaseText
+  调试版：$sha1DebugText
 
 到高德开放平台 https://console.amap.com/dev/key 新建 Key 时照着填：
   1) Android 平台 SDK（正式版）
      PackageName = $finalPackage
-     发布版安全码 SHA1 = $sha1Release
+     发布版安全码 SHA1 = $sha1ReleaseText
   2) Android 平台 SDK（调试版，只有用 Android Studio 调试才需要）
      PackageName = $debugPackage
-     调试版安全码 SHA1 = $sha1Debug
+     调试版安全码 SHA1 = $sha1DebugText
   3) Web 服务（不需要包名与 SHA1，用于「补全路线」和地点名反查）
 
 这个文件里没有任何 Key 本身，可以放心保存。
@@ -718,9 +726,14 @@ if (-not $DryRun) {
     }
 }
 
-Write-Ok ("正式版 Key：{0}" -f (Format-MaskedKey $finalKeyRelease))
+# 编译时真正生效的 SDK Key 取决于安装包类型：正式版用 AMAP_KEY_RELEASE，调试版用 AMAP_KEY_DEBUG。
+$sdkKeyLabel = if ($finalType -eq 'debug') { '调试版 Key' } else { '正式版 Key' }
+$sdkKeyForType = if ($finalType -eq 'debug') { $finalKeyDebug } else { $finalKeyRelease }
+$keysMissing = [string]::IsNullOrWhiteSpace($sdkKeyForType) -or [string]::IsNullOrWhiteSpace($finalKeyWeb)
+
+Write-Ok ("{0}：{1}" -f $sdkKeyLabel, (Format-MaskedKey $sdkKeyForType))
 Write-Ok ("Web 服务 Key：{0}" -f (Format-MaskedKey $finalKeyWeb))
-if (-not $finalKeyRelease -or -not $finalKeyWeb) {
+if ($keysMissing) {
     Write-Warn '还有 Key 没填。不影响编译，但地图、路线补全、地点名反查会用不了'
 }
 
@@ -730,8 +743,8 @@ Write-Step 7 '写入配置并编译'
 
 if ($finalName -ne $currentName -and -not $DryRun) {
     Set-StringResourceValue -Key 'app_name' -Value $finalName
-    Set-StringResourceValue -Key 'onboarding_subtitle' -Value $finalName -LiteralFrom $currentName
-    Set-StringResourceValue -Key 'today_map_empty_body' -Value $finalName -LiteralFrom $currentName
+    Set-StringResourceValue -Key 'onboarding_subtitle' -Value $finalName -From $currentName
+    Set-StringResourceValue -Key 'today_map_empty_body' -Value $finalName -From $currentName
     Write-Ok "已改应用名：$finalName"
 } else {
     Write-Ok '应用名没有变化'
@@ -813,7 +826,6 @@ if ($NoBuild) {
 
 # 没有 Key 时默认不编译：先让用户去申请，回来再运行一次，
 # 避免让完全不懂的人白等一次 10–30 分钟的构建。
-$keysMissing = [string]::IsNullOrWhiteSpace($finalKeyRelease) -or [string]::IsNullOrWhiteSpace($finalKeyWeb)
 if ($keysMissing) {
     $skipBuild = $true
     if (-not $script:NonInteractive) {
@@ -909,6 +921,15 @@ $apk = Get-ChildItem -Path $apkDir -Filter '*.apk' -ErrorAction SilentlyContinue
 if (-not $apk) {
     Write-Host '  编译命令成功了，但没找到 APK。请把下面的目录内容发给帮你的人：' -ForegroundColor Red
     Write-Host "  $apkDir" -ForegroundColor Yellow
+    Write-Result -Data ([ordered]@{
+            ok          = $false
+            built       = $false
+            reason      = 'apk-not-found'
+            appName     = $finalName
+            packageName = $finalPackage
+            type        = $finalType
+            logPath     = $logPath
+        })
     exit 3
 }
 $apkPath = $apk.FullName
@@ -968,7 +989,7 @@ Write-Host '  装到手机：连数据线复制这个文件，或用微信/邮�
 Write-Host '  手机上如果提示「禁止安装未知应用」，在提示里点「设置」允许即可。'
 Write-Host ''
 Write-Host '  还需要你做的事：'
-if (-not $finalKeyRelease -or -not $finalKeyWeb) {
+if ($keysMissing) {
     Write-Host '    · 去高德申请 Key，然后重新双击本脚本填进来（现在地图是空白的）'
 }
 Write-Host '    · 备份 app/keystore/release.jks 与 keystore.properties（丢了就不能覆盖升级）'

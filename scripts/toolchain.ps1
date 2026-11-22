@@ -13,8 +13,12 @@ function Test-JdkHome {
 function Resolve-JdkHome {
     if (Test-JdkHome $env:JAVA_HOME) { return $env:JAVA_HOME }
 
-    $candidates = @(
-        (Join-Path $env:LOCALAPPDATA 'Programs\Android Studio\jbr'),
+    $candidates = @()
+    if ($env:LOCALAPPDATA) {
+        # Windows 默认安装位置；macOS/Linux 上该变量为空，跳过而不是让 Join-Path 报错。
+        $candidates += (Join-Path $env:LOCALAPPDATA 'Programs\Android Studio\jbr')
+    }
+    $candidates += @(
         'C:\Program Files\Android\Android Studio\jbr',
         'C:\Program Files\Java\jdk-21',
         'C:\Program Files\Java\jdk-17',
@@ -62,12 +66,15 @@ function Resolve-AndroidSdk {
     $fromProperties = Read-SdkDirFromLocalProperties -Root $Root
     if ($fromProperties -and (Test-Path $fromProperties)) { return $fromProperties }
 
-    $candidates = @(
-        (Join-Path $env:LOCALAPPDATA 'Android\Sdk'),
-        'C:\Android\Sdk',
-        (Join-Path $env:HOME 'Library/Android/sdk'),
-        (Join-Path $env:HOME 'Android/Sdk')
-    )
+    $candidates = @()
+    if ($env:LOCALAPPDATA) {
+        $candidates += (Join-Path $env:LOCALAPPDATA 'Android\Sdk')
+    }
+    $candidates += 'C:\Android\Sdk'
+    if ($env:HOME) {
+        $candidates += (Join-Path $env:HOME 'Library/Android/sdk')
+        $candidates += (Join-Path $env:HOME 'Android/Sdk')
+    }
     foreach ($candidate in $candidates) {
         if ($candidate -and (Test-Path $candidate)) { return $candidate }
     }
