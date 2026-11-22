@@ -21,7 +21,9 @@
 - 一键改造向导：`setup-my-app.cmd`（Windows）/ `setup-my-app.command`（macOS）双击即可
   改应用名、生成自己的包名与 release 签名、打印高德控制台的填写卡，并直接编译出 APK；
   也支持参数化与 `--json`，供 AI 与自动化调用
-- 《编译属于你自己的行迹》：面向零基础的使用文档，含 AI 提示词、图标配色、费用说明与报错对照
+- 国内网络支持：向导可选「国内镜像」，Gradle 走腾讯云、依赖走阿里云；
+  附带 `scripts/china-mirrors.gradle`，手动构建时用 `-I` 挂载，不修改 `settings.gradle.kts`
+- 《编译属于你自己的行迹》：面向零基础的使用文档，含 AI 提示词、图标配色、国内网络、费用说明与报错对照
 - `docs/ai-prompt.md`：给 AI 的执行契约，复制 4 行口令即可让对方完成改造
 
 ### 变更

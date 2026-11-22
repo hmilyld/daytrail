@@ -68,7 +68,7 @@ $env:ANDROID_HOME = '<PATH_TO_ANDROID_SDK>'
 
 向导会依次完成：改应用名、生成你自己的包名（`app.applicationId`）、生成 release 签名、打印高德控制台的填写卡（包名 + SHA1）、写入 `local.properties`、编译出 APK。
 
-它只动 `gradle.properties`、`res/values/strings.xml`、图标颜色定义、`local.properties` 与签名文件，**不碰 Kotlin 代码**；改名换色随时可用 `git checkout` 撤回。
+它只动 `gradle.properties`、`res/values/strings.xml`、图标颜色定义、`local.properties` 与签名文件，**不碰 Kotlin 代码**；改名换色随时可撤回（重新解压 ZIP，或 `git checkout`）。
 
 ```powershell
 # Windows：交互式向导（也可以直接双击 setup-my-app.cmd）
@@ -85,7 +85,13 @@ bash scripts/setup-my-app.sh
 bash scripts/setup-my-app.sh --name 山行 --id zhangsan --no-build --json --yes
 ```
 
-完整的零基础步骤、图标配色、费用说明与常见报错见 [`docs/build-your-own.md`](docs/build-your-own.md)。
+完整的零基础步骤、图标配色、费用说明、国内网络与常见报错见 [`docs/build-your-own.md`](docs/build-your-own.md)。
+
+国内下载慢或打不开时，向导支持一键切换镜像（阿里云 Maven + 腾讯云 Gradle），见该文档第 14 节：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\setup-my-app.ps1 -UseChinaMirrors
+```
 
 ## 配置高德 Key
 

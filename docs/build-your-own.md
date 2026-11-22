@@ -15,11 +15,20 @@
 | 问题 | 答案 |
 |---|---|
 | 要装什么 | 只装一个 **Android Studio**（自带 Java 和 Android SDK，官网免费） |
-| 要多久 | 第一次约 30–60 分钟，其中下载占大半 |
+| 要多久 | 第一次约 1 小时，下载占大半；网络慢时可能 2 小时 |
 | 要花钱吗 | 不用。Android Studio 与高德个人开发者额度都免费 |
 | 会上传我的位置吗 | 不会。轨迹只存在你手机里，详见 `privacy-policy.md` |
 | 要 GitHub 账号吗 | 不需要。下载 ZIP 就行 |
 | 看不懂"包名""Key" | 看下面第 2 节，每个词一句话解释 |
+
+**你要走的四步：**
+
+1. 下载 ZIP 并解压到 `D:\daytrail`（约 5 分钟）
+2. 装 Android Studio，**打开一次**等它下载完 SDK 再关（20–40 分钟，几乎全是等待）
+3. 双击 `setup-my-app.cmd`，回答 3 个问题（名字、昵称、图标底色，约 2 分钟）
+4. 去高德申请两个 Key，回来再双击一次，等它编译完（10–30 分钟）
+
+做完第 4 步，手机里就有一个属于你自己的应用。中间的细节都在下面，卡住了先看第 12、14 节。
 
 **想让 AI 带你做？** 复制这段，粘给能操作电脑的 AI（Claude Code、Codex、Cursor、Cline、OpenCode 等），然后在项目文件夹里让它干活：
 
@@ -69,10 +78,10 @@
 
 | 项目 | 要求 |
 |---|---|
-| 电脑 | Windows 10/11 或 macOS（Linux 也能用，方法相同） |
+| 电脑 | Windows 10/11 或 macOS（Linux 也能用，方法相同）；内存建议 8 GB 以上 |
 | 磁盘空间 | 至少 10 GB 空闲 |
-| 手机 | Android 12 及以上 |
-| 网络 | 能访问 `developer.android.com` 与 `console.amap.com` |
+| 手机 | Android 12 及以上（更老的系统装不上，这不是编译问题） |
+| 网络 | 能访问 `developer.android.google.cn` 与 `console.amap.com`；GitHub 打不开也有办法，见第 14 节 |
 | 时间 | 第一次 30–60 分钟，其中实名认证可能要等半天到 1 天 |
 
 ---
@@ -82,13 +91,15 @@
 **不需要 GitHub 账号。**
 
 1. 用浏览器打开项目主页（就是给你这个链接的人发的那个地址）。
-2. 找到绿色的 **`Code`** 按钮 → 点 **`Download ZIP`**。
+2. 找到绿色的 **`Code`** 按钮 → 点 **`Download ZIP`**。（GitHub 打不开时看第 14 节）
 3. 把下载到的 `xxx-main.zip` **解压**到 `D:\daytrail`（Windows）或「下载」文件夹（macOS）。
 4. 记住这个文件夹：后面每一步都在**解压后的文件夹里面**操作。
 
 > **最常见的错误**：在压缩包预览窗口里直接双击脚本。那样什么都没发生，或者报错。请务必先解压。
 >
 > 目录名建议只用英文和数字、不要有空格；放在 `D:\daytrail` 这种短路径最省事。
+>
+> 不要把项目放在 OneDrive、iCloud、坚果云这类自动同步目录里：编译时会锁文件，容易出现莫名其妙的失败。
 
 如果是朋友发给你的压缩包，同样适用，直接从下一步开始。
 
@@ -97,6 +108,7 @@
 ## 5. 第 2 步：安装 Android Studio（只装这一个）
 
 1. 打开 <https://developer.android.com/studio>，点 **Download Android Studio**（约 1 GB）。
+   国内打不开时改用谷歌官方的国内站点：<https://developer.android.google.cn/studio>（文件完全一样）。
 2. 双击安装包，一路 **Next / 下一步**，保持默认即可。
 3. 安装完成后**先打开一次 Android Studio**。首次启动向导会让你选主题、然后开始下载 Android SDK——**让它下完（有进度条）**，完成后关掉即可。
 
@@ -132,6 +144,9 @@
 2. **英文昵称**：只给小写字母和数字，例如 `zhangsan`、`xiaoli2024`。脚本会拼出包名 `com.zhangsan.daytrail`。
 
    > 为什么不让你直接填包名？因为包名有格式要求，填错会编译失败。昵称够用，而且不会和本项目冲突。
+   >
+   > 昵称最好带点个人特征（比如名字拼音加数字）。太通用的昵称可能和别人撞车，
+   > 两个同包名的应用不能同时装在一台手机上。
 
 3. **图标底色**：输入 `#E4572E` 这种颜色就换底色，直接回车则保持不变。
 
@@ -156,6 +171,9 @@
 2. 控制台 →「用户权限」→ 完成**实名认证**（个人即可，需要身份证与人脸核验）。
    **未认证的 Key 调不通**；认证通常几分钟到 1 个工作日。
 3. 控制台 →「应用管理」→「创建新应用」，名称随便填，类型选「出行」或「生活服务」。
+
+> 不想提交实名信息也可以先跳过这一步：不填 Key，应用照样能记录、统计、导出，
+> 只是地图区域是空白、路线补全不可用。哪天愿意认证了，再回来补两个 Key。
 
 ### 7.2 创建正式版 Key（Android 平台）
 
@@ -191,7 +209,8 @@
 1. 再次双击 `setup-my-app.cmd`（macOS 是 `setup-my-app.command`）。
 2. 它已经记得你改过的包名与名字，会从「填 Key」这一步继续。
 3. 把两个 Key 分别粘进去（粘贴用 Ctrl+V / Command+V）。
-4. 它会自动开始编译。
+4. 它会问「这次使用国内镜像吗」：网络正常就直接回车；下载很慢或打不开就输入 `y`（详见第 14 节）。
+5. 它会自动开始编译。
 
 **第一次编译会下载很多东西（几百 MB 到 1 GB），通常 10–30 分钟。**
 看到进度条或百分比在动就是正常，**请不要关窗口**。
@@ -219,8 +238,11 @@ APK：D:\daytrail\app\build\outputs\apk\release\app-release.apk
 **手机上装不上怎么办：**
 
 - 提示「禁止安装未知应用」→ 点提示里的「设置」，允许你的文件管理器/浏览器安装。
-  Android 12+ 的路径：设置 → 应用 → 特殊应用权限 → 安装未知应用。
-- **不要用微信直接点开 APK**：微信会拦截或用内置浏览器打开，装不上。先「保存到手机」，再用系统文件管理器安装。
+- 各家系统入口不太一样，按你的手机找：
+  - 小米 / 红米：设置 → 应用设置 → 授权管理 → 安装未知应用；提示「安全检测」时点「继续安装」
+  - 华为 / 荣耀：设置 → 安全 → 更多安全设置 → 安装外部来源应用；鸿蒙的「纯净模式」需要先关闭
+  - OPPO / vivo / 一加：设置 → 安全（或应用管理）→ 安装未知应用 → 允许
+- **不要用微信直接点开 APK**：微信会拦截或用内置浏览器打开，装不上；QQ 还可能把文件改名成 `.apk.1`。先「保存到手机」，再用系统文件管理器找到它、必要时改回 `.apk` 再安装。
 - 桌面出现两个图标（原来是别人的、现在是你自己的）是正常的：两个包名不同，是两个独立应用。
 
 ---
@@ -301,15 +323,19 @@ APK：D:\daytrail\app\build\outputs\apk\release\app-release.apk
 | 现象 | 原因与处理 |
 |---|---|
 | 双击没反应 | 可能没解压，或被杀毒软件拦了；换到 `D:\daytrail` 再试 |
+| 提示"找不到 gradlew.bat / 请在项目根目录运行" | 多半解压出了两层文件夹（`daytrail-main\daytrail-main`）；往里再进一层，看到 `app`、`gradlew.bat` 再双击 |
 | 提示"找不到 Java / 没找到 Android SDK" | Android Studio 没装完，或装完没打开过；打开一次等 SDK 下完再运行 |
-| 窗口停住很久 | 第一次编译在下载依赖，看百分比是否在动；真的半小时没动就换网络重试 |
+| 窗口停住很久 | 第一次编译在下载依赖，看百分比是否在动；真的半小时没动就换网络重试，或改用国内镜像（见第 14 节） |
+| 提示 `compileSdk 37` 找不到 / AGP 版本过低 | Android Studio 太旧（低于 2025 年的版本）；`Help → Check for Updates` 更新后再试 |
+| 提示磁盘空间不足 | 编译需要约 10 GB；清理磁盘或把项目换到空间大的分区 |
 | 编译失败 | 看 `dist/setup-log.txt`；把最后 30 行发给帮你的人，里面不含 Key |
 | 地图一片空白 | 高德 Key 没填、或 Key 里的包名与 SHA1 与实际不符；重新核对 `dist/amap-fill-card.txt` 与控制台 |
 | 高德报 `INVALID_USER_SCODE` | Key 里填的包名还是旧的（或填成了 `com.hmilyld.daytrail`） |
 | 高德报 `USERKEY_PLAT_NOMATCH` | 把 Web 服务的 Key 填到了 SDK 位置，或相反 |
 | 提示"签名不一致"无法覆盖安装 | 手机上有另一个签名的同包名应用；卸载旧的再装，或换包名 |
+| 设置里「检查更新」提示未配置更新源 | 正常：向导把更新源清空了，避免去拉别人的版本；你自己发版时才需要配 |
 | 装上后打开就闪退 | 极少数机型缺少高德原生库；先确认是 ARM 真机（x86 模拟器地图必然不可用） |
-| 想反悔 | 在项目文件夹里执行 `git checkout -- gradle.properties app/src/main/res`（会撤掉改名换色） |
+| 想反悔 | 重新解压一次 ZIP 覆盖代码文件即可；你的 `local.properties`、`keystore.properties`、`release.jks` 不在 ZIP 里，不会被覆盖（装过 git 的话也可以 `git checkout -- gradle.properties app/src/main/res`） |
 
 ---
 
@@ -322,6 +348,50 @@ APK：D:\daytrail\app\build\outputs\apk\release\app-release.apk
   1. 在高德控制台给 Web 服务 Key 设置**日配额上限**；
   2. 不常用的日子里，把 `local.properties` 里的 `AMAP_KEY_WEB` 留空，相关按钮会自动禁用；
   3. 别把带 Key 的 APK 或 `local.properties` 发给别人。
+
+---
+
+## 14. 国内网络：下载慢、打不开怎么办
+
+整个过程只会碰到四个国外站点，每个都有替代办法：
+
+| 卡在哪 | 表现 | 怎么办 |
+|---|---|---|
+| 打开项目主页下载 ZIP | GitHub 一直转圈、打不开 | 让发你链接的人直接把 ZIP 发给你；或用手机热点；**不要**在来路不明的"加速站"登录任何账号 |
+| 下载 Android Studio | `developer.android.com` 打不开 | 改用谷歌官方的国内站点：<https://developer.android.google.cn/studio>，内容与下载的文件完全一样 |
+| Android Studio 首次下载 SDK | 进度条长时间不动 | 先点重试；换热点再试。真下不动，可以请已经装好的朋友把整个 SDK 目录复制给你：Windows 是 `C:\Users\<你>\AppData\Local\Android\Sdk`，macOS 是 `~/Library/Android/sdk`（约 4–8 GB） |
+| 双击脚本后卡在下载 | 日志里出现 `services.gradle.org`、`dl.google.com` 或 `maven.google.com` | 重新运行脚本，在「这次使用国内镜像吗」输入 `y`；或在命令行加参数 `-UseChinaMirrors`（macOS 是 `--use-china-mirrors`） |
+
+### 国内镜像做了什么
+
+向导里选择使用镜像后，只会改两处，都可以还原：
+
+| 改什么 | 换成 | 怎么还原 |
+|---|---|---|
+| `gradle/wrapper/gradle-wrapper.properties` 一行 | Gradle 发行包改从腾讯云镜像下载（`mirrors.cloud.tencent.com/gradle/`） | 重新解压一次 ZIP，或 `git checkout -- gradle/wrapper/gradle-wrapper.properties` |
+| 本次构建的仓库顺序（不改文件） | 依赖优先从阿里云 Maven 镜像下载（`maven.aliyun.com`），镜像里没有的自动回退官方源 | 下次不加参数运行即可 |
+
+手动构建时也可以自己加：
+
+```powershell
+.\gradlew.bat -I scripts\china-mirrors.gradle :app:assembleRelease
+```
+
+```bash
+./gradlew -I scripts/china-mirrors.gradle :app:assembleRelease
+```
+
+> 镜像由第三方（腾讯云、阿里云）提供，只用来下载公开的开源依赖；它不会看到你的高德 Key，
+> 也不会参与应用运行。镜像偶尔会比官方源慢半拍，如果构建报"找不到某个版本"，
+> 去掉镜像参数再试一次即可。
+
+> 用向导成功编译过一次之后，依赖已经缓存在本机；之后用 Android Studio 打开同一个项目
+> 不会重新下载，不必再配镜像。
+
+### 用公司或学校代理
+
+- Android Studio：`Settings → Appearance & Behavior → System Settings → HTTP Proxy`，选 Manual，填代理地址与端口。
+- 命令行构建：先设置环境变量 `HTTP_PROXY`、`HTTPS_PROXY`，再运行脚本。
 
 ---
 

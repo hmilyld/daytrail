@@ -105,7 +105,8 @@
 
    然后读取 `dist/setup-result.json`（比解析控制台输出可靠），取 `packageName`、`sha1Release`、`sha1Debug`、`cardPath`。
    如果返回 `built=false` 且 `needsKeys=true`，说明还缺 Key，继续第 3 步，不要重试编译。
-
+   如果用户在中国大陆、下载很慢或失败，在命令里加 `-UseChinaMirrors`（macOS `--use-china-mirrors`）：
+   它会让 Gradle 走腾讯云镜像、依赖走阿里云镜像；结果里的 `chinaMirrors` 表示是否启用。
 3. **让用户去申请 Key**：`https://console.amap.com/dev/key`，需要两个（正式版 + Web 服务）。
    把 `packageName` 与 `sha1Release` 原样告诉用户——这两个值不是密钥，可以显示。
 4. **等用户把两个 Key 贴回来**。不要自己编造，不要从网上找。
