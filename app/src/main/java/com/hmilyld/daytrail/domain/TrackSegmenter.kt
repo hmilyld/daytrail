@@ -18,6 +18,12 @@ import com.hmilyld.daytrail.core.distanceMeters
  * 时间足够长说明中间本该有采样点却没有，这才是真正的数据缺失。
  */
 object TrackSegmenter {
+    /** 相邻点时间差超过它才可能是缺失。导出、手动微调的接续判断共用。 */
+    const val GAP_MIN_MS = 10 * 60_000L
+
+    /** 同时位移也要超过它。省电档正常驾驶时相邻点相距 2–5 公里，只看距离会切碎。 */
+    const val GAP_MIN_DISPLACEMENT_METERS = 2_000.0
+
     /**
      * 把带时间戳的点切成若干连续段。
      *
@@ -26,8 +32,8 @@ object TrackSegmenter {
      */
     fun segment(
         samples: List<TrackPointSample>,
-        minGapMs: Long = 10 * 60_000L,
-        minDisplacementMeters: Double = 2_000.0,
+        minGapMs: Long = GAP_MIN_MS,
+        minDisplacementMeters: Double = GAP_MIN_DISPLACEMENT_METERS,
     ): List<List<GeoPoint>> {
         if (samples.isEmpty()) return emptyList()
 

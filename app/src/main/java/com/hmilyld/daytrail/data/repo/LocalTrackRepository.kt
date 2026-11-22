@@ -13,6 +13,7 @@ import com.hmilyld.daytrail.data.db.entity.PlaceEntity
 import com.hmilyld.daytrail.data.db.entity.RouteOverrideEntity
 import com.hmilyld.daytrail.data.db.entity.StaySegmentEntity
 import com.hmilyld.daytrail.data.db.entity.TrackDayEntity
+import com.hmilyld.daytrail.data.db.entity.TrackEditEntity
 import com.hmilyld.daytrail.data.db.entity.TrackPointEntity
 import com.hmilyld.daytrail.data.geocode.PlaceAutoNamer
 import com.hmilyld.daytrail.domain.DayAggregator
@@ -23,6 +24,7 @@ import com.hmilyld.daytrail.domain.RouteOverride
 import com.hmilyld.daytrail.domain.StayDetector
 import com.hmilyld.daytrail.domain.StayMarkers
 import com.hmilyld.daytrail.domain.StaySegment
+import com.hmilyld.daytrail.domain.TrackEdit
 import com.hmilyld.daytrail.domain.TrackPointSample
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -49,6 +51,7 @@ class LocalTrackRepository(
     private val gapDao = database.dayGapDao()
     private val placeDao = database.placeDao()
     private val routeDao = database.routeOverrideDao()
+    private val editDao = database.trackEditDao()
 
     override suspend fun appendPoints(points: List<TrackPointEntity>): Int {
         if (points.isEmpty()) return 0
@@ -72,6 +75,9 @@ class LocalTrackRepository(
                     gapDao.deleteDay(batch.dayKey.value)
                     dayDao.deleteDay(batch.dayKey.value)
                     routeDao.deleteDay(batch.dayKey.value)
+                    // 手动微调是针对「原来那条线」画的，数据被整体替换后必须一起清，
+                    // 否则新导入的轨迹会顶着旧的修正形状显示。
+                    editDao.deleteDay(batch.dayKey.value)
                 }
                 inserted += pointDao.insertAll(batch.points).count { it > 0 }
                 // 在事务内重算：导入完成后界面立刻能看到汇总，
@@ -282,6 +288,27 @@ class LocalTrackRepository(
         routeDao.deleteDay(dayKey.value)
     }
 
+    override fun observeEdit(dayKey: DayKey): Flow<TrackEdit?> =
+        editDao.observeOfDay(dayKey.value).map { entity -> entity?.toTrackEdit() }
+
+    override suspend fun saveEdit(
+        dayKey: DayKey,
+        edit: TrackEdit,
+    ) {
+        editDao.upsert(
+            TrackEditEntity(
+                dayKey = dayKey.value,
+                segments = encodePoints(edit.segments),
+                cutoffMs = edit.cutoffMs,
+                updatedAtMs = edit.updatedAtMs,
+            ),
+        )
+    }
+
+    override suspend fun clearEdit(dayKey: DayKey) {
+        editDao.deleteDay(dayKey.value)
+    }
+
     override suspend fun backfillPlaces() {
         // 已经有地点说明回填过了。用户把所有地点都删掉的情况也走这里：
         // suppress 只置标志、行还在，count 依然 > 0，不会把删掉的地点重建回来。
@@ -298,6 +325,7 @@ class LocalTrackRepository(
         gapDao.deleteDay(dayKey.value)
         dayDao.deleteDay(dayKey.value)
         routeDao.deleteDay(dayKey.value)
+        editDao.deleteDay(dayKey.value)
     }
 
     override suspend fun deleteAll() {
@@ -307,6 +335,7 @@ class LocalTrackRepository(
         dayDao.deleteAll()
         placeDao.deleteAll()
         routeDao.deleteAll()
+        editDao.deleteAll()
     }
 
     override suspend fun totalPointCount(): Int = pointDao.totalPointCount()
@@ -370,12 +399,12 @@ internal fun PlaceEntity.toGeoPoint() =
 /** 纠偏折线的 JSON 编解码。用 [lon, lat] 顺序，与 GeoJSON 一致。 */
 private val routeJson = Json { ignoreUnknownKeys = true }
 
-private fun encodePoints(segments: List<List<GeoPoint>>): String =
+internal fun encodePoints(segments: List<List<GeoPoint>>): String =
     routeJson.encodeToString(
         segments.map { segment -> segment.map { listOf(it.longitude, it.latitude) } },
     )
 
-private fun decodePoints(text: String): List<List<GeoPoint>> =
+internal fun decodePoints(text: String): List<List<GeoPoint>> =
     runCatching { routeJson.decodeFromString<List<List<List<Double>>>>(text) }
         .getOrDefault(emptyList())
         .map { segment ->
@@ -391,6 +420,13 @@ private fun RouteOverrideEntity.toRouteOverride(): RouteOverride =
         segments = decodePoints(points),
         distanceMeters = distanceMeters,
         createdAtMs = createdAtMs,
+    )
+
+private fun TrackEditEntity.toTrackEdit(): TrackEdit =
+    TrackEdit(
+        segments = decodePoints(segments),
+        cutoffMs = cutoffMs,
+        updatedAtMs = updatedAtMs,
     )
 
 /** 停留段实体到领域模型的转换。渲染吸附与地图标记共用同一份锚点。 */

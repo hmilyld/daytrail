@@ -12,6 +12,7 @@ import com.hmilyld.daytrail.data.db.dao.PlaceDao
 import com.hmilyld.daytrail.data.db.dao.RouteOverrideDao
 import com.hmilyld.daytrail.data.db.dao.StaySegmentDao
 import com.hmilyld.daytrail.data.db.dao.TrackDayDao
+import com.hmilyld.daytrail.data.db.dao.TrackEditDao
 import com.hmilyld.daytrail.data.db.dao.TrackPointDao
 import com.hmilyld.daytrail.data.db.entity.DayGapEntity
 import com.hmilyld.daytrail.data.db.entity.DiagnosticEventEntity
@@ -19,6 +20,7 @@ import com.hmilyld.daytrail.data.db.entity.PlaceEntity
 import com.hmilyld.daytrail.data.db.entity.RouteOverrideEntity
 import com.hmilyld.daytrail.data.db.entity.StaySegmentEntity
 import com.hmilyld.daytrail.data.db.entity.TrackDayEntity
+import com.hmilyld.daytrail.data.db.entity.TrackEditEntity
 import com.hmilyld.daytrail.data.db.entity.TrackPointEntity
 
 /**
@@ -35,6 +37,7 @@ import com.hmilyld.daytrail.data.db.entity.TrackPointEntity
  * - v2：新增 place（把多天的停留聚成「家」「公司」这类稳定地点）
  * - v3：新增 route_override（按需纠偏后的路线，派生数据）
  * - v4：新增 diagnostic_event（诊断日志，只记决策不记坐标）
+ * - v5：新增 track_edit（手动微调的折线，只影响显示）
  */
 @Database(
     entities = [
@@ -45,8 +48,9 @@ import com.hmilyld.daytrail.data.db.entity.TrackPointEntity
         PlaceEntity::class,
         RouteOverrideEntity::class,
         DiagnosticEventEntity::class,
+        TrackEditEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class DayTrailDatabase : RoomDatabase() {
@@ -63,6 +67,8 @@ abstract class DayTrailDatabase : RoomDatabase() {
     abstract fun routeOverrideDao(): RouteOverrideDao
 
     abstract fun diagnosticDao(): DiagnosticDao
+
+    abstract fun trackEditDao(): TrackEditDao
 
     companion object {
         private const val NAME = "daytrail.db"
@@ -121,10 +127,25 @@ abstract class DayTrailDatabase : RoomDatabase() {
                 }
             }
 
+        /** v4 → v5：手动微调的折线，单独一张表，不动已有数据。 */
+        private val MIGRATION_4_5 =
+            object : Migration(4, 5) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL(
+                        "CREATE TABLE IF NOT EXISTS `track_edit` (" +
+                            "`day_key` TEXT NOT NULL, " +
+                            "`segments` TEXT NOT NULL, " +
+                            "`cutoff_ts` INTEGER NOT NULL, " +
+                            "`updated_at` INTEGER NOT NULL, " +
+                            "PRIMARY KEY(`day_key`))",
+                    )
+                }
+            }
+
         fun create(context: Context): DayTrailDatabase =
             Room
                 .databaseBuilder(context.applicationContext, DayTrailDatabase::class.java, NAME)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .build()
     }
 }
