@@ -117,12 +117,18 @@ private fun AvailableDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Text(
-                    text =
-                        info.notes.ifBlank { stringResource(R.string.update_no_notes) },
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(top = TrailSpacing.sm),
-                )
+                if (info.notes.isBlank()) {
+                    Text(
+                        text = stringResource(R.string.update_no_notes),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(top = TrailSpacing.sm),
+                    )
+                } else {
+                    UpdateNotesView(
+                        notes = info.notes,
+                        modifier = Modifier.padding(top = TrailSpacing.sm),
+                    )
+                }
             }
         },
         confirmButton = {
