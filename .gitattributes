@@ -9,6 +9,10 @@
 *.ps1 text eol=crlf
 *.cmd text eol=crlf
 
+# 跨平台脚本统一 LF；可执行位由 git index 记录（git update-index --chmod=+x）
+*.sh text eol=lf
+*.command text eol=lf
+
 # 二进制文件不做换行转换
 *.png binary
 *.jpg binary
