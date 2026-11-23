@@ -1,0 +1,22 @@
+// DayTrail 国内网络加速用的 Gradle init script（可选）。
+//
+// 用法（不改仓库任何文件）：
+//   ./gradlew -I scripts/china-mirrors.gradle :app:assembleRelease
+//
+// 它把阿里云对 Google Maven / Maven Central 的公开镜像插到仓库列表最前面，
+// 原来的 google() / mavenCentral() 仍然保留在后面兜底：镜像缺某个依赖时会自动回退。
+// 只有带 -I 的那次构建生效，Android Studio 里不带参数打开项目行为不变。
+//
+// 不在中国大陆、或本来就能正常下载时，不要加这个参数。
+
+beforeSettings { settings ->
+    settings.pluginManagement.repositories {
+        maven { url = 'https://maven.aliyun.com/repository/gradle-plugin' }
+        maven { url = 'https://maven.aliyun.com/repository/google' }
+        maven { url = 'https://maven.aliyun.com/repository/public' }
+    }
+    settings.dependencyResolutionManagement.repositories {
+        maven { url = 'https://maven.aliyun.com/repository/google' }
+        maven { url = 'https://maven.aliyun.com/repository/public' }
+    }
+}

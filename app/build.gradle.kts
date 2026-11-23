@@ -40,12 +40,27 @@ fun amapKey(propertyName: String): String = localProperties.getProperty(property
  */
 fun updateRepo(): String = providers.gradleProperty("app.updateRepo").getOrElse("").trim()
 
+/**
+ * 应用包名（applicationId）。
+ *
+ * 高德 Key 绑定「包名 + 签名 SHA1」，所以每个自己编译的人都必须换成自己的包名，
+ * 否则会和本项目发布的安装包互相覆盖，调用量也会记到同一把 Key 上。
+ * 唯一来源是 gradle.properties 的 `app.applicationId`，默认值保持原包名，
+ * 让 CI 与已有发布通道行为不变。
+ */
+fun appApplicationId(): String =
+    providers
+        .gradleProperty("app.applicationId")
+        .getOrElse("")
+        .trim()
+        .ifEmpty { "com.hmilyld.daytrail" }
+
 android {
     namespace = "com.hmilyld.daytrail"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.hmilyld.daytrail"
+        applicationId = appApplicationId()
         minSdk = 31
         targetSdk = 37
         versionCode = providers.gradleProperty("app.versionCode").get().toInt()
