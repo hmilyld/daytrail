@@ -24,7 +24,7 @@
 **你要走的四步：**
 
 1. 下载 ZIP 并解压到 `D:\daytrail`（约 5 分钟）
-2. 装 Android Studio，**打开一次**等它下载完 SDK 再关（20–40 分钟，几乎全是等待）
+2. 装 Android Studio，**打开一次**把 SDK 和 API 37 都装好再关（20–40 分钟，几乎全是等待）
 3. 双击 `setup-my-app.cmd`，按提示回答名字和昵称（其余问题直接回车即可，约 2 分钟）
 4. 去高德申请两个 Key，回来再双击一次，等它编译完（10–30 分钟）
 
@@ -70,7 +70,13 @@
 | 签名 / keystore | 证明"这个包是我做的"的凭证。以后升级必须用同一个，**千万别丢** |
 | 高德 Key | 用地图服务的通行证。绑定包名与签名，需要你实名申请 |
 | SHA1 | 签名文件的一串指纹，申请 Key 时要填 |
-| 终端 / PowerShell | 一个能打命令的黑窗口。本流程**不需要你用它**，双击脚本即可 |
+| 终端 / PowerShell | 一个能打命令的黑窗口。正常情况下不需要用它，只有第 14 节的可选手动步骤才会遇到 |
+| Gradle | 把代码打包成 APK 的后台工具。向导会自己调用，你不用单独安装 |
+| Maven / 镜像 | 存放开源代码库的地方；国内常用阿里云镜像，**能不能访问取决于你的网络**，脚本会在失败时按日志提示 |
+| SDK Manager | Android Studio 里下载安卓系统组件的窗口：Tools → SDK Manager |
+| API 37 / Android 17 | 编译这个应用必须装的一个安卓版本包，全名叫「Android SDK Platform 37.0」 |
+| applicationId | 包名在配置文件里的写法，向导会自动帮你填，你只要给个英文昵称 |
+| 代理 | 公司或学校上网用的中转地址；有就填进 Android Studio 设置，没有不用管 |
 
 ---
 
@@ -82,7 +88,7 @@
 | 磁盘空间 | 至少 10 GB 空闲 |
 | 手机 | Android 12 及以上（更老的系统装不上，这不是编译问题） |
 | 网络 | 能访问 `developer.android.google.cn` 与 `console.amap.com`；GitHub 打不开也有办法，见第 14 节 |
-| 时间 | 第一次 30–60 分钟，其中实名认证可能要等半天到 1 天 |
+| 时间 | 第一次约 1 小时，下载占大半；网络慢时可能 2 小时 |
 
 ---
 
@@ -116,7 +122,19 @@
    >
    > 国内下载慢是常见情况，可以换个时间段重试；不建议从来路不明的"加速器"下载安装包。
 
-4. 如何确认装好了：能正常打开 Android Studio 且首次向导已经走完，就可以了。**不需要在 Android Studio 里打开这个项目**。
+4. 还要单独装一个「Android 17 / API 37」组件——这个项目必须，缺了就编译不了：
+
+   - 顶部菜单 **Tools → SDK Manager**（Mac 也是这个菜单位置）。
+   - 切到 **SDK Platforms** 标签，找到 **Android 17（Cinnamon Bun / API 37）**，
+     勾选 **Android SDK Platform 37.0**，点 **Apply** 下载。
+   - 再切到 **SDK Tools** 标签，展开 **Android SDK Build-Tools**，勾选 **37.x**，点 **Apply**。
+   - 列表里看不到 37 / 37.0，说明 Android Studio 太旧，先 **Help → Check for Updates** 更新，
+     然后重新打开 SDK Manager 再看。
+5. 如何确认装好了：双击向导脚本，第 1 步会打印「找到 API 37 编译平台」。
+   这一步完全在本机检查，不需要联网判断。
+
+> Android Studio 装在 D 盘或其他自定义位置也没问题：脚本自动找不到时会问你文件夹在哪，
+> 在资源管理器 / Finder 里把文件夹**拖进窗口**就会自动填好路径。
 
 ---
 
@@ -333,9 +351,10 @@ APK：D:\daytrail\app\build\outputs\apk\release\app-release.apk
 |---|---|
 | 双击没反应 | 可能没解压，或被杀毒软件拦了；换到 `D:\daytrail` 再试 |
 | 提示"找不到 gradlew.bat / 请在项目根目录运行" | 多半解压出了两层文件夹（`daytrail-main\daytrail-main`）；往里再进一层，看到 `app`、`gradlew.bat` 再双击 |
-| 提示"找不到 Java / 没找到 Android SDK" | Android Studio 没装完，或装完没打开过；打开一次等 SDK 下完再运行 |
+| 提示"找不到 Java / 没找到 Android SDK" | 自动没找到时脚本会问你文件夹在哪：在资源管理器/Finder 里把文件夹拖进窗口即可；还没装就按第 2 步装 |
+| 提示"还差一个东西：Android 17（API 37）" | 按第 2 步在 SDK Manager 里装 Platform 37.0 和 Build-Tools 37；这是本项目必须的版本 |
 | 窗口停住很久 | 第一次编译在下载依赖，看百分比是否在动；真的半小时没动就换网络重试，或改用国内镜像（见第 14 节） |
-| 提示 `compileSdk 37` 找不到 / AGP 版本过低 | Android Studio 太旧（低于 2025 年的版本）；`Help → Check for Updates` 更新后再试 |
+| 提示 `compileSdk 37`、`Failed to find target with hash string android-37` 或 `android-37.0` | 缺 API 37 编译平台：按第 2 步在 SDK Manager 里装「Android SDK Platform 37.0」和 Build-Tools 37；列表里没有就 `Help → Check for Updates` 更新 Android Studio |
 | 提示磁盘空间不足 | 编译需要约 10 GB；清理磁盘或把项目换到空间大的分区 |
 | 编译失败 | 看 `dist/setup-log.txt`；把最后 30 行发给帮你的人，里面不含 Key |
 | 地图一片空白 | 高德 Key 没填、或 Key 里的包名与 SHA1 与实际不符；重新核对 `dist/amap-fill-card.txt` 与控制台 |
@@ -362,25 +381,35 @@ APK：D:\daytrail\app\build\outputs\apk\release\app-release.apk
 
 ## 14. 国内网络：下载慢、打不开怎么办
 
-整个过程只会碰到四个国外站点，每个都有替代办法：
+**先说清楚**：下面每个网址在你那里能不能打开，取决于你的网络，这里没法替你判断。
+脚本会把真实情况写进 `dist/setup-log.txt`，构建失败时也会按日志里的关键词给你提示。
+遇到下载卡住，先换网络 / 手机热点试一次，再按下面选一条路。
 
-| 卡在哪 | 表现 | 怎么办 |
+### 先判断卡在哪一步
+
+| 看到的现象 | 大概是什么 | 怎么做 |
 |---|---|---|
-| 打开项目主页下载 ZIP | GitHub 一直转圈、打不开 | 让发你链接的人直接把 ZIP 发给你；或用手机热点；**不要**在来路不明的"加速站"登录任何账号 |
-| 下载 Android Studio | `developer.android.com` 打不开 | 改用谷歌官方的国内站点：<https://developer.android.google.cn/studio>，内容与下载的文件完全一样 |
-| Android Studio 首次下载 SDK | 进度条长时间不动 | 先点重试；换热点再试。真下不动，可以请已经装好的朋友把整个 SDK 目录复制给你：Windows 是 `C:\Users\<你>\AppData\Local\Android\Sdk`，macOS 是 `~/Library/Android/sdk`（约 4–8 GB） |
-| 双击脚本后卡在下载 | 日志里出现 `services.gradle.org`、`dl.google.com` 或 `maven.google.com` | 重新运行脚本，在「这次使用国内镜像吗」输入 `y`；或在命令行加参数 `-UseChinaMirrors`（macOS 是 `--use-china-mirrors`） |
+| GitHub 页面转圈 | 项目主页打不开 | 让发你链接的人直接把 ZIP 发给你；或换手机热点；**不要**在来路不明的"加速站"登录任何账号 |
+| Android Studio 官网打不开 | `developer.android.com` 被挡 | 试谷歌官方国内站 <https://developer.android.google.cn/studio>，文件内容一样 |
+| SDK Manager 进度条不动 | 安卓系统组件下载慢 | 点重试 / 换热点；按第 2 步确认是不是只差 API 37；实在不行请装好的朋友把整个 SDK 文件夹复制给你：Windows `C:\Users\<你>\AppData\Local\Android\Sdk`，macOS `~/Library/Android/sdk`（约 4–8 GB） |
+| 窗口里出现 `Downloading https://…` 长时间不动 | Gradle 或依赖下载被挡 | 关掉窗口，重新双击脚本，在「这次使用国内镜像吗」输入 `y` |
+| 日志里有 `Could not resolve`、`Connection timed out`、`UnknownHost` | 网络被挡或太慢 | 换网络 / 热点；或试下面的镜像；都不行就找有条件的朋友用他自己的 Key 帮编一次 |
 
-### 国内镜像做了什么
+### 镜像怎么用（可选项）
 
-向导里选择使用镜像后，只会改两处，都可以还原：
+镜像不是必选项：**能正常下载就不用开**。打开后脚本只做两件事：
 
-| 改什么 | 换成 | 怎么还原 |
+| 改什么 | 换成什么 | 怎么还原 |
 |---|---|---|
-| `gradle/wrapper/gradle-wrapper.properties` 一行 | Gradle 发行包改从腾讯云镜像下载（`mirrors.cloud.tencent.com/gradle/`） | 重新解压一次 ZIP，或 `git checkout -- gradle/wrapper/gradle-wrapper.properties` |
-| 本次构建的仓库顺序（不改文件） | 依赖优先从阿里云 Maven 镜像下载（`maven.aliyun.com`），镜像里没有的自动回退官方源 | 下次不加参数运行即可 |
+| `gradle/wrapper/gradle-wrapper.properties` 一行 | Gradle 发行包指向腾讯云镜像（`mirrors.cloud.tencent.com/gradle/`） | 重新解压一次 ZIP，或 `git checkout -- gradle/wrapper/gradle-wrapper.properties` |
+| 本次构建的仓库顺序（不改文件） | 依赖优先从阿里云 Maven 镜像（`maven.aliyun.com`）下载；镜像里没有的会自动回退官方源 | 下次运行不选镜像即可 |
 
-手动构建时也可以自己加：
+两个细节：
+
+- **镜像能不能访问由你的网络决定**。开镜像后下载依然失败，就把镜像关掉重试，再换网络。
+- 向导默认**不开**镜像；只有你输入 `y` 或加了参数才开。不开时行为和原版完全一致。
+
+想手动构建的人（向导用户不需要看）可以自己加：
 
 ```powershell
 .\gradlew.bat -I scripts\china-mirrors.gradle :app:assembleRelease
@@ -390,17 +419,15 @@ APK：D:\daytrail\app\build\outputs\apk\release\app-release.apk
 ./gradlew -I scripts/china-mirrors.gradle :app:assembleRelease
 ```
 
-> 镜像由第三方（腾讯云、阿里云）提供，只用来下载公开的开源依赖；它不会看到你的高德 Key，
-> 也不会参与应用运行。镜像偶尔会比官方源慢半拍，如果构建报"找不到某个版本"，
-> 去掉镜像参数再试一次即可。
+> 镜像由第三方提供，只用来下载公开的开源依赖；它看不到你的高德 Key，也不参与应用运行。
 
-> 用向导成功编译过一次之后，依赖已经缓存在本机；之后用 Android Studio 打开同一个项目
-> 不会重新下载，不必再配镜像。
+### 有公司 / 学校代理或加速器时
 
-### 用公司或学校代理
+- Android Studio：`Settings → Appearance & Behavior → System Settings → HTTP Proxy` → Manual → 填地址和端口。
+- 命令行构建：先设置环境变量 `HTTP_PROXY`、`HTTPS_PROXY` 再运行脚本。
+- 向导失败时会按日志区分「SDK 没装全」和「下载被挡」，照提示做即可。
 
-- Android Studio：`Settings → Appearance & Behavior → System Settings → HTTP Proxy`，选 Manual，填代理地址与端口。
-- 命令行构建：先设置环境变量 `HTTP_PROXY`、`HTTPS_PROXY`，再运行脚本。
+> 成功编译过一次后，依赖已缓存在本机；之后用 Android Studio 打开同一个项目不用重新下载，也不必再配镜像。
 
 ---
 

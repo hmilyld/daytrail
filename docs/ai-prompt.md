@@ -86,8 +86,10 @@
 
 ### 步骤
 
-0. **环境自检**：操作系统；JDK 与 Android SDK（优先 Android Studio 自带）。
-   缺 SDK 时让用户先打开一次 Android Studio 完成 SDK 下载，然后停。
+0. **环境自检**：操作系统；JDK、Android SDK，以及 API 37 编译平台（`platforms/android-37.0`）。
+   缺 SDK 时让用户先打开一次 Android Studio 完成 SDK 下载；缺 API 37 时告诉用户去
+   `Tools → SDK Manager → SDK Platforms` 勾选「Android SDK Platform 37.0」，
+   并在 `SDK Tools → SDK Build-Tools` 勾选 37.x，装好后停。这两项都是本机检查，与网络无关。
 1. **收集信息**，一次只问一个：
    - 应用显示名（中文即可，≤12 字）
    - 英文昵称（小写字母/数字，用于拼包名 `com.<昵称>.daytrail`）
