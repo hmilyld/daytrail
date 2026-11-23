@@ -324,6 +324,17 @@ write_result() {
     fi
 }
 
+# 构建失败时用日志里的实际证据给提示，不靠猜用户网络环境。
+show_build_failure_hint() {
+    local log="$1"
+    [ -f "$log" ] || return 0
+    if grep -Eqi 'Failed to find target with hash string|android-37|SDK platform|license|not accepted' "$log"; then
+        warn '日志里看起来是「Android SDK 平台没装全」：按第 1 步的提示装 API 37 后再试。'
+    elif grep -Eqi 'services\.gradle\.org|dl\.google\.com|maven\.google\.com|aliyun|tencent|Could not resolve|ConnectException|Timeout|timed out|UnknownHost' "$log"; then
+        warn '日志里看起来是「下载被挡住或太慢」：换网络/手机热点，或按文档第 14 节换镜像。'
+    fi
+}
+
 # 国内网络加速：把 Gradle 发行包指到腾讯云镜像，并在本次构建里挂上阿里云 Maven 镜像。
 # 只改 gradle-wrapper.properties 一行；想还原执行
 #   git checkout -- gradle/wrapper/gradle-wrapper.properties
@@ -351,23 +362,35 @@ step 1 '检查电脑环境'
 info '正在找 Java 和 Android SDK，第一次可能要几秒……'
 
 JDK_HOME=$(resolve_jdk_home || true)
-[ -n "$JDK_HOME" ] || {
-    printf '\n'
-    warn '这台电脑还缺少编译需要的工具。'
-    warn '请先安装 Android Studio（它会自带 Java 和 Android SDK）：'
-    warn '  https://developer.android.com/studio'
-    printf '\n'
-    warn '装好后请打开 Android Studio 一次，等它把 SDK 下载完（有进度条），再关掉，'
-    warn '然后重新运行本脚本。'
-    exit 1
-}
 ANDROID_SDK=$(resolve_android_sdk "$ROOT" || true)
-[ -n "$ANDROID_SDK" ] || {
+
+if [ -z "$JDK_HOME" ] || [ -z "$ANDROID_SDK" ]; then
+    if [ "$NON_INTERACTIVE" -eq 1 ]; then
+        printf '\n'
+        warn '这台电脑还没找到编译需要的工具。'
+        warn '请先安装 Android Studio（自带 Java 与 SDK）：https://developer.android.google.cn/studio'
+        warn '装好后打开一次，等 SDK 下载完再关，然后重新运行。'
+        exit 1
+    fi
     printf '\n'
-    warn '没找到 Android SDK。'
-    warn '请先打开一次 Android Studio，让它把 SDK 下载完（有进度条），再关掉重新运行。'
-    exit 1
-}
+    warn '没有自动找到，但你可能已经装过了。可以手动指一下位置。'
+    info '小技巧：在 Finder 里找到那个文件夹，拖进终端窗口，路径会自动填好。'
+    printf '\n'
+    read -r -p '  Android SDK 文件夹路径（回车 = 跳过）' manual_sdk || manual_sdk=''
+    read -r -p '  Java 文件夹路径（Android Studio 里的 jbr/Contents/Home；回车 = 跳过）' manual_jdk || manual_jdk=''
+    manual_sdk=$(printf '%s' "$manual_sdk" | sed -e 's/^"//' -e 's/"$//')
+    manual_jdk=$(printf '%s' "$manual_jdk" | sed -e 's/^"//' -e 's/"$//')
+    if [ -z "$manual_sdk" ] || [ -z "$manual_jdk" ] ||
+        [ ! -d "$manual_sdk/platforms" ] || [ ! -x "$manual_jdk/bin/java" ]; then
+        warn '这个位置找不到需要的文件，或者还没装 Android Studio。'
+        warn '请到 https://developer.android.google.cn/studio 下载安装，装完打开一次。'
+        exit 1
+    fi
+    JDK_HOME="$manual_jdk"
+    ANDROID_SDK="$manual_sdk"
+    set_property_line "$LOCAL_PROPERTIES" 'sdk.dir' "$ANDROID_SDK"
+    ok '已记住你指定的位置'
+fi
 
 export JAVA_HOME="$JDK_HOME"
 export ANDROID_HOME="$ANDROID_SDK"
@@ -377,6 +400,19 @@ KEYTOOL="$JAVA_HOME/bin/keytool"
 
 ok '找到 Java'
 ok '找到 Android SDK'
+
+# 只检查目录还不够：没装 API 37 平台的话，构建十几分钟后才会报看不懂的错。
+if [ ! -d "$ANDROID_SDK/platforms/android-37.0" ] && [ ! -d "$ANDROID_SDK/platforms/android-37" ]; then
+    printf '\n'
+    warn '还差一个东西：Android 17（API 37）的编译平台。'
+    warn '请打开 Android Studio → Tools → SDK Manager → SDK Platforms，'
+    warn '勾选「Android SDK Platform 37.0」（Android 17 / Cinnamon Bun 下面），点 Apply。'
+    warn '再到 SDK Tools → SDK Build-Tools 里勾选 37.x，点 Apply。'
+    warn '列表里找不到 37 就先更新 Android Studio（Help → Check for Updates）。'
+    warn '装好后重新运行本脚本即可。'
+    exit 1
+fi
+ok '找到 API 37 编译平台'
 ok '找到项目文件'
 if [ ! -x "$ROOT/gradlew" ]; then
     chmod +x "$ROOT/gradlew" 2>/dev/null || true
@@ -836,6 +872,7 @@ if [ "$build_code" -ne 0 ]; then
     printf '\n'
     warn "详细日志已保存在：$LOG_PATH"
     warn '把这个文件发给帮你的人，里面不会暴露你的高德 Key。'
+    show_build_failure_hint "$LOG_PATH"
     write_result "$(printf '{"ok":false,"built":false,"appName":"%s","packageName":"%s","type":"%s","chinaMirrors":%s,"logPath":"%s"}' \
         "$(json_escape "$FINAL_NAME")" "$(json_escape "$FINAL_PACKAGE")" "$FINAL_TYPE" "$mirror_json" "$(json_escape "$LOG_PATH")")"
     exit 3

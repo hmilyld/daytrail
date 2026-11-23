@@ -396,6 +396,18 @@ function Write-Result {
     if ($Json) { [Console]::Out.WriteLine($text) }
 }
 
+# 构建失败时用日志里的实际证据给提示，不靠猜用户网络环境。
+function Show-BuildFailureHint {
+    param([string]$Path)
+    if (-not (Test-Path $Path)) { return }
+    $text = Get-TextFile $Path
+    if ($text -match '(?i)(Failed to find target with hash string|android-37|SDK platform|license|not accepted)') {
+        Write-Host '  日志里看起来是「Android SDK 平台没装全」：按第 1 步的提示装 API 37 后再试。' -ForegroundColor Yellow
+    } elseif ($text -match '(?i)(services\.gradle\.org|dl\.google\.com|maven\.google\.com|aliyun|tencent|Could not resolve|ConnectException|Timeout|timed out|UnknownHost)') {
+        Write-Host '  日志里看起来是「下载被挡住或太慢」：换网络/手机热点，或按文档第 14 节换镜像。' -ForegroundColor Yellow
+    }
+}
+
 # 国内网络加速：把 Gradle 发行包指到腾讯云镜像，并在本次构建里挂上阿里云 Maven 镜像。
 # 只改 gradle-wrapper.properties 一行；想还原执行
 #   git checkout -- gradle/wrapper/gradle-wrapper.properties
@@ -432,23 +444,69 @@ Write-Step 1 '检查电脑环境'
 Write-Host '  正在找 Java 和 Android SDK，第一次可能要几秒……'
 
 $sdkDir = $null
+$probeError = $null
 try {
     $toolchain = Set-ToolchainEnvironment -Root $root
     $sdkDir = $toolchain.AndroidSdk
     Write-Ok '找到 Java'
     Write-Ok '找到 Android SDK'
 } catch {
+    $probeError = $_.Exception.Message
+    $sdkDir = $null
+}
+
+if (-not $sdkDir) {
+    if ($script:NonInteractive) {
+        Write-Host ''
+        Write-Host '  这台电脑还没找到编译需要的工具。' -ForegroundColor Yellow
+        Write-Host '  请先安装 Android Studio（自带 Java 与 Android SDK，官网免费）：' -ForegroundColor Yellow
+        Write-Host '    https://developer.android.google.cn/studio' -ForegroundColor Yellow
+        Write-Host '  装好后打开一次，等 SDK 下载完再关，然后重新运行。' -ForegroundColor Yellow
+        Write-Host "  探测结果：$probeError" -ForegroundColor DarkGray
+        exit 1
+    }
+
+    # 自动探测失败不代表没装：很多人把 Android Studio 装在 D 盘，探测不到。
     Write-Host ''
-    Write-Host '  这台电脑还缺少编译需要的工具。' -ForegroundColor Yellow
-    Write-Host '  请先安装 Android Studio（它会自带 Java 和 Android SDK）：' -ForegroundColor Yellow
-    Write-Host '    https://developer.android.com/studio' -ForegroundColor Yellow
+    Write-Host '  没有自动找到，但你可能已经装过了。可以手动指一下位置。' -ForegroundColor Yellow
+    Write-Host '  小技巧：在文件资源管理器里找到那个文件夹，用鼠标拖进这个窗口，路径会自动填好。'
     Write-Host ''
-    Write-Host '  装好后请打开 Android Studio 一次，等它把 SDK 下载完（有进度条），再关掉，' -ForegroundColor Yellow
-    Write-Host '  然后重新双击 setup-my-app.cmd。' -ForegroundColor Yellow
+    $sdkManual = Read-Host '  Android SDK 文件夹路径（直接回车 = 跳过，先看下面的说明）'
+    $javaManual = Read-Host '  Java 文件夹路径（Android Studio 里的 jbr；直接回车 = 跳过）'
+    $sdkManual = ($sdkManual -replace '^"|"$', '').Trim()
+    $javaManual = ($javaManual -replace '^"|"$', '').Trim()
+    $javaOk = (Test-Path (Join-Path $javaManual 'bin/java.exe')) -or (Test-Path (Join-Path $javaManual 'bin/java'))
+    if ([string]::IsNullOrWhiteSpace($sdkManual) -or [string]::IsNullOrWhiteSpace($javaManual) -or
+        -not (Test-Path (Join-Path $sdkManual 'platforms')) -or -not $javaOk) {
+        Write-Host ''
+        Write-Host '  这个位置找不到需要的文件，或者还没装 Android Studio。' -ForegroundColor Yellow
+        Write-Host '  请到 https://developer.android.google.cn/studio 下载安装（免费），装完打开一次。' -ForegroundColor Yellow
+        Write-Host "  探测结果：$probeError" -ForegroundColor DarkGray
+        exit 1
+    }
+    $env:JAVA_HOME = $javaManual
+    $env:ANDROID_HOME = $sdkManual
+    $env:ANDROID_SDK_ROOT = $sdkManual
+    $sdkDir = $sdkManual
+    $escapedSdk = $sdkDir -replace '\\', '\\' -replace ':', '\:'
+    Set-PropertyLine -Path $script:LocalPropertiesPath -Key 'sdk.dir' -Value $escapedSdk
+    Write-Ok '已记住你指定的位置'
+}
+
+# 只检查目录存在还不够：API 37 的编译平台没装的话，要等构建十几分钟后才报看不懂的错。
+$hasApi37 = (Test-Path (Join-Path $sdkDir 'platforms/android-37.0')) -or
+    (Test-Path (Join-Path $sdkDir 'platforms/android-37'))
+if (-not $hasApi37) {
     Write-Host ''
-    Write-Host "  详细说明：$($_.Exception.Message)" -ForegroundColor DarkGray
+    Write-Host '  还差一个东西：Android 17（API 37）的编译平台。' -ForegroundColor Yellow
+    Write-Host '  请打开 Android Studio → Tools → SDK Manager → SDK Platforms，' -ForegroundColor Yellow
+    Write-Host '  勾选「Android SDK Platform 37.0」（在 Android 17 / Cinnamon Bun 下面），点 Apply 下载。' -ForegroundColor Yellow
+    Write-Host '  再到 SDK Tools → SDK Build-Tools 里勾选 37.x，点 Apply。' -ForegroundColor Yellow
+    Write-Host '  列表里找不到 37 的话，说明 Android Studio 太旧，先 Help → Check for Updates 更新。' -ForegroundColor Yellow
+    Write-Host '  装好后重新双击本脚本即可。' -ForegroundColor Yellow
     exit 1
 }
+Write-Ok '找到 API 37 编译平台'
 
 Write-Ok '找到项目文件'
 if (-not (Test-Path $script:LocalPropertiesPath)) {
@@ -902,6 +960,7 @@ if ($buildCode -ne 0) {
     Write-Host ''
     Write-Host "  详细日志已保存在：$logPath" -ForegroundColor Yellow
     Write-Host '  把上面这个文件发给帮你的人，里面不会暴露你的高德 Key。' -ForegroundColor Yellow
+    Show-BuildFailureHint -Path $logPath
     Write-Result -Data ([ordered]@{
             ok           = $false
             built        = $false
