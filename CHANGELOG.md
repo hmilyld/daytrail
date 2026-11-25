@@ -16,6 +16,10 @@
 
 ## [Unreleased]
 
+---
+
+## [0.5.2] - 2026-11-25
+
 ### 新增
 
 - 一键改造向导：`setup-my-app.cmd`（Windows）/ `setup-my-app.command`（macOS）双击即可
@@ -32,6 +36,12 @@
   换成自己的包名，避免共用同一把高德 Key
 - `scripts/verify.ps1` 的 JDK/SDK 探测抽到 `scripts/toolchain.ps1`，
   `-Install` 的启动组件按 `app.applicationId` 拼接，不再写死包名
+
+### 修复
+
+- 「补全名称」在没配 Web Key、高德拒绝请求、网络失败、坐标无效等情况下一律提示
+  「可能没网」。现在失败原因会结构化返回，并按优先级给出对应文案；没配 Key 时
+  禁用入口并显示配置说明，不再误导用户检查网络
 
 ---
 
