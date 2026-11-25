@@ -89,4 +89,23 @@ class ReverseGeocodeClientTest {
         assertNull(client.parseName("not json at all"))
         assertNull(client.parseName(""))
     }
+
+    @Test
+    fun `parse distinguishes api rejection from missing name`() {
+        val rejected =
+            client.parse("""{"status":"0","info":"INVALID_USER_KEY","regeocode":{}}""")
+        assertEquals(RegeoParse.Rejected("INVALID_USER_KEY"), rejected)
+
+        val noName =
+            client.parse(
+                """{"status":"1","regeocode":{"addressComponent":{"township":[],"district":[]},"pois":[]}}""",
+            )
+        assertEquals(RegeoParse.NoName, noName)
+    }
+
+    @Test
+    fun `parse returns the name when present`() {
+        val json = """{"status":"1","regeocode":{"pois":[{"name":"招银大厦"}]}}"""
+        assertEquals(RegeoParse.Named("招银大厦"), client.parse(json))
+    }
 }

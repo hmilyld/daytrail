@@ -7,6 +7,7 @@ import com.hmilyld.daytrail.data.db.entity.DayGapEntity
 import com.hmilyld.daytrail.data.db.entity.StaySegmentEntity
 import com.hmilyld.daytrail.data.db.entity.TrackDayEntity
 import com.hmilyld.daytrail.data.db.entity.TrackPointEntity
+import com.hmilyld.daytrail.data.geocode.NamingResult
 import com.hmilyld.daytrail.data.repo.DayImportBatch
 import com.hmilyld.daytrail.data.repo.TrackRepository
 import com.hmilyld.daytrail.domain.RouteOverride
@@ -88,7 +89,7 @@ private class FakeTrackRepository : TrackRepository {
         toId: Long,
     ): Boolean = false
 
-    override suspend fun backfillPlaceNames(): Int = 0
+    override suspend fun backfillPlaceNames(): NamingResult = NamingResult(0, 0)
 
     override fun observePlace(id: Long): Flow<PlaceSummary?> = flowOf(null)
 

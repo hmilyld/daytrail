@@ -4,6 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hmilyld.daytrail.core.GeoPoint
 import com.hmilyld.daytrail.data.db.dao.PlaceSummary
+import com.hmilyld.daytrail.data.geocode.NamingFailure
+import com.hmilyld.daytrail.data.geocode.NamingResult
+import com.hmilyld.daytrail.data.geocode.primary
 import com.hmilyld.daytrail.data.repo.TrackRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -21,7 +24,12 @@ import kotlinx.coroutines.launch
  */
 class PlacesViewModel(
     private val repository: TrackRepository,
+    /** 是否配置了高德 Web 服务 Key。为 false 时「补全名称」不可用。 */
+    private val namingAvailable: Boolean = true,
 ) : ViewModel() {
+    /** 与「补全路线」的 canCorrectRoute 对齐：没配 Key 就不给可用的入口。 */
+    val canBackfill: Boolean get() = namingAvailable
+
     val places: StateFlow<List<PlaceSummary>> =
         repository
             .observePlaces()
@@ -35,6 +43,8 @@ class PlacesViewModel(
     data class NamingOutcome(
         val attempted: Int,
         val named: Int,
+        /** 只挑一条最值得说的失败原因；全成功时为 null。 */
+        val failure: NamingFailure?,
     )
 
     private val _naming = MutableStateFlow(false)
@@ -54,11 +64,20 @@ class PlacesViewModel(
     fun backfillNames() {
         if (_naming.value) return
         viewModelScope.launch {
-            val attempted = places.value.count { it.place.label.isNullOrBlank() }
             _naming.value = true
-            val named = runCatching { repository.backfillPlaceNames() }.getOrDefault(0)
+            // 仓库抛异常是意外的编程/DB 错误，按网络类处理，至少不会假装成功。
+            val result =
+                runCatching { repository.backfillPlaceNames() }
+                    .getOrDefault(
+                        NamingResult(0, 0, listOf(NamingFailure.NETWORK)),
+                    )
             _naming.value = false
-            _outcome.value = NamingOutcome(attempted = attempted, named = named)
+            _outcome.value =
+                NamingOutcome(
+                    attempted = result.attempted,
+                    named = result.named,
+                    failure = result.failures.primary(),
+                )
         }
     }
 

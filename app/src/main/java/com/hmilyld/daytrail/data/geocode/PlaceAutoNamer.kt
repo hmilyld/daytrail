@@ -43,22 +43,34 @@ class PlaceAutoNamer(
     }
 
     /**
-     * 给所有未命名地点补名字，返回补成功的个数。
+     * 给所有未命名地点补名字，返回结构化结果：成功几个、其余为什么没成功。
+     *
+     * 早期只返回成功个数，界面无法区分「没配 Key」「高德拒绝」「断网」，一律
+     * 提示「可能没网」。现在把每个失败点的原因带回去，让界面说人话。
      *
      * 逐个查而不是并发：地点通常只有个位数，串行更容易观察，也不会触发配额。
      */
-    suspend fun backfill(): Int {
-        if (!enabled) return 0
-        return placeDao.unnamed().count { place ->
-            val point = GeoPoint(place.latitude, place.longitude)
-            val name = runCatching { client.lookup(point).getOrNull() }.getOrNull()
-            if (name.isNullOrBlank()) {
-                false
-            } else {
-                placeDao.renameIfUnnamed(place.id, name, LabelSource.AUTO)
-                true
-            }
+    suspend fun backfill(): NamingResult {
+        if (!enabled) {
+            return NamingResult(attempted = 0, named = 0, failures = listOf(NamingFailure.NO_KEY))
         }
+        val places = placeDao.unnamed()
+        val failures = mutableListOf<NamingFailure>()
+        var named = 0
+        for (place in places) {
+            val point = GeoPoint(place.latitude, place.longitude)
+            val result = client.lookup(point)
+            val name = result.getOrNull()
+            if (name.isNullOrBlank()) {
+                failures +=
+                    (result.exceptionOrNull() as? ReverseGeocodeException)?.failure
+                        ?: NamingFailure.NO_NAME
+                continue
+            }
+            placeDao.renameIfUnnamed(place.id, name, LabelSource.AUTO)
+            named++
+        }
+        return NamingResult(attempted = places.size, named = named, failures = failures)
     }
 
     private companion object {

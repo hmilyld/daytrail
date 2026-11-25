@@ -1,5 +1,6 @@
 ﻿package com.hmilyld.daytrail.ui.screens.places
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -47,6 +48,7 @@ import com.hmilyld.daytrail.AppContainer
 import com.hmilyld.daytrail.R
 import com.hmilyld.daytrail.core.GeoPoint
 import com.hmilyld.daytrail.data.db.dao.PlaceSummary
+import com.hmilyld.daytrail.data.geocode.NamingFailure
 import com.hmilyld.daytrail.domain.PlaceNeighbors
 import com.hmilyld.daytrail.ui.appViewModelFactory
 import com.hmilyld.daytrail.ui.components.EmptyState
@@ -77,6 +79,12 @@ fun PlacesScreen(
 
     val unnamedCount = places.count { it.place.label.isNullOrBlank() }
     val snackbar = remember { SnackbarHostState() }
+    val namingLabel =
+        when {
+            naming -> R.string.places_autoname_running
+            !viewModel.canBackfill -> R.string.places_autoname_no_key
+            else -> R.string.places_autoname
+        }
 
     // 相距 400 米内的地点互相标「疑似重复」：同一个小区里两次停车能差两三百米，
     // 归并半径只有 120 米，于是会建出两个地点。合不合并由用户点进详情决定。
@@ -100,6 +108,7 @@ fun PlacesScreen(
         when {
             result == null -> null
             result.named > 0 -> stringResource(R.string.places_autoname_done, result.named)
+            result.failure != null -> stringResource(failureMessage(result.failure))
             else -> stringResource(R.string.places_autoname_failed)
         }
 
@@ -130,17 +139,11 @@ fun PlacesScreen(
                 actions = {
                     // 只在还有未命名地点时出现：没有可补的就别占位
                     if (unnamedCount > 0) {
-                        TextButton(onClick = { viewModel.backfillNames() }, enabled = !naming) {
-                            Text(
-                                text =
-                                    stringResource(
-                                        if (naming) {
-                                            R.string.places_autoname_running
-                                        } else {
-                                            R.string.places_autoname
-                                        },
-                                    ),
-                            )
+                        TextButton(
+                            onClick = { viewModel.backfillNames() },
+                            enabled = !naming && viewModel.canBackfill,
+                        ) {
+                            Text(text = stringResource(namingLabel))
                         }
                     }
                 },
@@ -181,6 +184,27 @@ fun PlacesScreen(
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                     modifier = Modifier.widthIn(max = 840.dp),
                 ) {
+                    // 没配 Web Key 时按钮是灰的，必须在页面上看得见原因，
+                    // 否则用户只会以为「补全名称」坏了。文案与「补全路线」的 Key 检查对齐。
+                    if (unnamedCount > 0 && !viewModel.canBackfill) {
+                        item(key = "naming_no_key_hint") {
+                            Card(
+                                colors =
+                                    CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                                    ),
+                                shape = MaterialTheme.shapes.medium,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.places_autoname_no_key_msg),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(TrailSpacing.lg),
+                                )
+                            }
+                        }
+                    }
                     items(places, key = { it.place.id }) { summary ->
                         PlaceCard(
                             summary = summary,
@@ -274,3 +298,14 @@ private fun PlaceCard(
         }
     }
 }
+
+/** 失败原因 → 文案资源。中文只放在 strings.xml，Compose 侧只认资源 id。 */
+@StringRes
+private fun failureMessage(failure: NamingFailure): Int =
+    when (failure) {
+        NamingFailure.NO_KEY -> R.string.places_autoname_no_key_msg
+        NamingFailure.API_REJECTED -> R.string.places_autoname_key_rejected
+        NamingFailure.NETWORK -> R.string.places_autoname_network_failed
+        NamingFailure.INVALID_POINT -> R.string.places_autoname_invalid_point
+        NamingFailure.NO_NAME -> R.string.places_autoname_no_name_found
+    }

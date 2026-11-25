@@ -8,6 +8,7 @@ import com.hmilyld.daytrail.data.db.entity.DayGapEntity
 import com.hmilyld.daytrail.data.db.entity.StaySegmentEntity
 import com.hmilyld.daytrail.data.db.entity.TrackDayEntity
 import com.hmilyld.daytrail.data.db.entity.TrackPointEntity
+import com.hmilyld.daytrail.data.geocode.NamingResult
 import com.hmilyld.daytrail.data.repo.DayImportBatch
 import com.hmilyld.daytrail.data.repo.TrackRepository
 import com.hmilyld.daytrail.domain.RouteOverride
@@ -324,7 +325,7 @@ class TrackImporterTest {
             toId: Long,
         ): Boolean = error("not used")
 
-        override suspend fun backfillPlaceNames(): Int = error("not used")
+        override suspend fun backfillPlaceNames(): NamingResult = error("not used")
 
         override fun observePlace(id: Long): Flow<PlaceSummary?> = error("not used")
 

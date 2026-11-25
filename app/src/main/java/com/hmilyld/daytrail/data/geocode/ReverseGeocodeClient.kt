@@ -39,67 +39,94 @@ class ReverseGeocodeClient(
         withContext(Dispatchers.IO) {
             if (!configured) {
                 return@withContext Result.failure(
-                    IllegalStateException("没有配置高德 Web 服务 Key"),
+                    ReverseGeocodeException(NamingFailure.NO_KEY, "AMAP_WEB_KEY not configured"),
                 )
             }
             if (!point.isValid) {
-                return@withContext Result.failure(IllegalArgumentException("坐标无效"))
+                return@withContext Result.failure(
+                    ReverseGeocodeException(NamingFailure.INVALID_POINT, "invalid coordinate"),
+                )
             }
 
             runCatching {
-                // 坐标放请求体、只有 Key 留在查询串：
-                // GET 会把「Key + 精确坐标」整条写进 URL，任何系统代理日志、
-                // 抓包工具、企业 MDM 都能原样看到。高德 Web 服务支持 POST。
-                val body =
-                    "location=${point.longitude.format()},${point.latitude.format()}" +
-                        "&extensions=all&radius=200"
-                val connection =
-                    (URL("$url?key=$apiKey").openConnection() as HttpURLConnection).apply {
-                        requestMethod = "POST"
-                        doOutput = true
-                        connectTimeout = CONNECT_TIMEOUT_MS
-                        readTimeout = READ_TIMEOUT_MS
-                        setRequestProperty(
-                            "Content-Type",
-                            "application/x-www-form-urlencoded; charset=utf-8",
-                        )
-                    }
-
+                var connection: HttpURLConnection? = null
                 try {
-                    connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
-                    val code = connection.responseCode
+                    // 坐标放请求体、只有 Key 留在查询串：
+                    // GET 会把「Key + 精确坐标」整条写进 URL，任何系统代理日志、
+                    // 抓包工具、企业 MDM 都能原样看到。高德 Web 服务支持 POST。
+                    val body =
+                        "location=${point.longitude.format()},${point.latitude.format()}" +
+                            "&extensions=all&radius=200"
+                    val conn =
+                        (URL("$url?key=$apiKey").openConnection() as HttpURLConnection).apply {
+                            requestMethod = "POST"
+                            doOutput = true
+                            connectTimeout = CONNECT_TIMEOUT_MS
+                            readTimeout = READ_TIMEOUT_MS
+                            setRequestProperty(
+                                "Content-Type",
+                                "application/x-www-form-urlencoded; charset=utf-8",
+                            )
+                        }
+                    connection = conn
+
+                    conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+                    val code = conn.responseCode
+                    if (code !in 200..299) {
+                        throw ReverseGeocodeException(NamingFailure.NETWORK, "HTTP $code")
+                    }
                     val text =
-                        (if (code in 200..299) connection.inputStream else connection.errorStream)
+                        conn.inputStream
                             ?.bufferedReader()
                             ?.use { it.readText() }
                             .orEmpty()
 
-                    if (code !in 200..299) {
-                        error("逆地理编码返回 HTTP $code")
+                    when (val parsed = parse(text)) {
+                        is RegeoParse.Named -> parsed.name
+                        is RegeoParse.Rejected ->
+                            throw ReverseGeocodeException(
+                                NamingFailure.API_REJECTED,
+                                "regeo rejected: ${parsed.info}",
+                            )
+                        RegeoParse.NoName ->
+                            throw ReverseGeocodeException(NamingFailure.NO_NAME, "no place name")
                     }
-                    parseName(text) ?: error("这个位置查不到地名")
+                } catch (e: ReverseGeocodeException) {
+                    throw e
+                } catch (e: Exception) {
+                    // 断网、超时、代理返回非 JSON 等都归到网络类。
+                    throw ReverseGeocodeException(
+                        NamingFailure.NETWORK,
+                        e.message ?: "network error",
+                    )
                 } finally {
-                    connection.disconnect()
+                    connection?.disconnect()
                 }
             }
         }
 
     /**
-     * 解析返回报文。
+     * 解析返回报文，并区分「高德拒绝」和「查不到名字」。
      *
      * 高德在字段缺失时会返回空数组 `[]` 而不是 `null`，所以不能直接按 String 反序列化，
      * 这里逐个字段取 [JsonElement] 再判断是不是字符串。
      *
      * internal 是为了单测：这段解析逻辑最容易在真实报文上翻车。
      */
-    internal fun parseName(text: String): String? {
+    internal fun parse(text: String): RegeoParse {
         val root =
-            runCatching { json.parseToJsonElement(text) }.getOrNull() as? JsonObject
-                ?: return null
-        if (root["status"].text() != "1") return null
-        val regeocode = root["regeocode"] as? JsonObject ?: return null
-        return nameFrom(regeocode)
+            json.parseToJsonElement(text) as? JsonObject
+                ?: return RegeoParse.Rejected(null)
+        if (root["status"].text() != "1") {
+            return RegeoParse.Rejected(root["info"].text())
+        }
+        val regeocode = root["regeocode"] as? JsonObject ?: return RegeoParse.NoName
+        return nameFrom(regeocode)?.let { RegeoParse.Named(it) } ?: RegeoParse.NoName
     }
+
+    /** 保留给既有单测与「只想要名字」的调用方：拿到名字或 null。 */
+    internal fun parseName(text: String): String? =
+        (runCatching { parse(text) }.getOrNull() as? RegeoParse.Named)?.name
 
     private fun nameFrom(regeocode: JsonObject): String? {
         val nearestPoi = (regeocode["pois"] as? JsonArray)?.firstOrNull() as? JsonObject
@@ -142,3 +169,24 @@ class ReverseGeocodeClient(
         val json = Json { ignoreUnknownKeys = true }
     }
 }
+
+/** 报文解析的三种结局。internal 单测要断言这三种，不能只看名字。 */
+internal sealed interface RegeoParse {
+    data class Named(
+        val name: String,
+    ) : RegeoParse
+
+    /** status != 1，[info] 是高德给的原因（如 INVALID_USER_KEY）。 */
+    data class Rejected(
+        val info: String?,
+    ) : RegeoParse
+
+    /** 请求成功但取不到名字。 */
+    data object NoName : RegeoParse
+}
+
+/** 把失败原因带出 [ReverseGeocodeClient.lookup] 的 [Result]。 */
+class ReverseGeocodeException(
+    val failure: NamingFailure,
+    message: String,
+) : Exception(message)

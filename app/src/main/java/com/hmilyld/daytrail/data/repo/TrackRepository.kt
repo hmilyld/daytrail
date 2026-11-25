@@ -7,6 +7,7 @@ import com.hmilyld.daytrail.data.db.entity.DayGapEntity
 import com.hmilyld.daytrail.data.db.entity.StaySegmentEntity
 import com.hmilyld.daytrail.data.db.entity.TrackDayEntity
 import com.hmilyld.daytrail.data.db.entity.TrackPointEntity
+import com.hmilyld.daytrail.data.geocode.NamingResult
 import com.hmilyld.daytrail.domain.RouteOverride
 import com.hmilyld.daytrail.domain.TrackEdit
 import kotlinx.coroutines.flow.Flow
@@ -130,11 +131,11 @@ interface TrackRepository {
     ): Boolean
 
     /**
-     * 用逆地理编码给所有未命名地点补名字，返回补成功的个数。
+     * 用逆地理编码给所有未命名地点补名字，返回结构化结果（成功数 + 失败原因）。
      *
      * 这是**联网**操作，只有用户在列表页点「补全名称」时才会调用。
      */
-    suspend fun backfillPlaceNames(): Int
+    suspend fun backfillPlaceNames(): NamingResult
 
     /** 单个地点的详情（含去过天数）。 */
     fun observePlace(id: Long): Flow<PlaceSummary?>

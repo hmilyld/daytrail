@@ -39,7 +39,10 @@ fun appViewModelFactory(container: AppContainer): ViewModelProvider.Factory =
             )
         }
         initializer {
-            PlacesViewModel(repository = container.trackRepository)
+            PlacesViewModel(
+                repository = container.trackRepository,
+                namingAvailable = container.reverseGeocodeClient.configured,
+            )
         }
         initializer {
             PlaceDetailViewModel(repository = container.trackRepository)

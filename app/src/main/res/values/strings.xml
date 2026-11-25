@@ -90,7 +90,13 @@
     <string name="places_autoname">补全名称</string>
     <string name="places_autoname_running">补全中…</string>
     <string name="places_autoname_done">已补全 %1$d 个地点</string>
-    <string name="places_autoname_failed">没能补全：可能没网，或这些位置查不到名字</string>
+    <string name="places_autoname_failed">没能补全：这些位置查不到名字，或网络暂时不可用</string>
+    <string name="places_autoname_no_key">补全名称（需配置 Key）</string>
+    <string name="places_autoname_no_key_msg">需要先配置高德 Web 服务 Key（AMAP_WEB_KEY）才能补全名称</string>
+    <string name="places_autoname_key_rejected">高德拒绝了请求：请检查 Web Key 是否有效、配额是否用完</string>
+    <string name="places_autoname_network_failed">网络请求失败，请检查连接后重试</string>
+    <string name="places_autoname_invalid_point">这些地点的坐标无效，无法查询名称</string>
+    <string name="places_autoname_no_name_found">这些位置查不到名称</string>
     <string name="places_suspect">疑似重复</string>
     <string name="places_merge">合并到其他地点</string>
     <string name="places_merge_title">合并到其他地点</string>
