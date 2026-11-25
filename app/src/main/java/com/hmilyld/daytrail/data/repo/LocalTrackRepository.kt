@@ -15,6 +15,7 @@ import com.hmilyld.daytrail.data.db.entity.StaySegmentEntity
 import com.hmilyld.daytrail.data.db.entity.TrackDayEntity
 import com.hmilyld.daytrail.data.db.entity.TrackEditEntity
 import com.hmilyld.daytrail.data.db.entity.TrackPointEntity
+import com.hmilyld.daytrail.data.geocode.NamingResult
 import com.hmilyld.daytrail.data.geocode.PlaceAutoNamer
 import com.hmilyld.daytrail.domain.DayAggregator
 import com.hmilyld.daytrail.domain.GapDetector
@@ -388,7 +389,8 @@ class LocalTrackRepository(
         return id
     }
 
-    override suspend fun backfillPlaceNames(): Int = autoNamer?.backfill() ?: 0
+    override suspend fun backfillPlaceNames(): NamingResult =
+        autoNamer?.backfill() ?: NamingResult(attempted = 0, named = 0)
 }
 
 /** 实体到领域模型的转换。集中放这里，避免各处重复写。 */
