@@ -1,5 +1,7 @@
 ﻿package com.hmilyld.daytrail.ui.screens.settings
 
+import android.content.Context
+import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
@@ -14,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
 import androidx.compose.material.icons.outlined.BatterySaver
 import androidx.compose.material.icons.outlined.Bedtime
+import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.Info
@@ -49,6 +52,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.hmilyld.daytrail.AppContainer
@@ -327,6 +331,8 @@ private fun SettingsContent(
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
 ) {
     var showClearDialog by rememberSaveable { mutableStateOf(false) }
+    var showVersionNotes by rememberSaveable { mutableStateOf(false) }
+    val context = LocalContext.current
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -472,17 +478,28 @@ private fun SettingsContent(
 
                     // ---- 关于 ----
                     SettingsSection(title = stringResource(R.string.settings_section_about)) {
-                        SettingsInfoRow(
+                        SettingsNavRow(
                             icon = Icons.Outlined.Info,
                             title = stringResource(R.string.settings_version),
                             // 从 BuildConfig 读，别再写死：之前这里硬编码 0.1.0，
                             // 连发三版都没变，反馈问题时版本号是错的。
                             subtitle =
                                 stringResource(
-                                    R.string.settings_version_value,
+                                    R.string.settings_version_notes_hint,
                                     BuildConfig.VERSION_NAME,
                                     BuildConfig.VERSION_CODE,
                                 ),
+                            onClick = { showVersionNotes = true },
+                        )
+                        SettingsNavRow(
+                            icon = Icons.Outlined.Code,
+                            title = stringResource(R.string.settings_github),
+                            subtitle =
+                                stringResource(
+                                    R.string.settings_github_desc,
+                                    repositoryPath(),
+                                ),
+                            onClick = { openUrl(context, repositoryUrl()) },
                         )
                         SettingsSwitchRow(
                             icon = Icons.Outlined.Refresh,
@@ -539,6 +556,39 @@ private fun SettingsContent(
                     Text(text = stringResource(R.string.action_cancel))
                 }
             },
+        )
+    }
+
+    if (showVersionNotes) {
+        VersionNotesDialog(
+            versionName = BuildConfig.VERSION_NAME,
+            onDismiss = { showVersionNotes = false },
+        )
+    }
+}
+
+/**
+ * 仓库的 `OWNER/REPO`。
+ *
+ * 优先跟随 `app.updateRepo`：fork 用户把它改成自己的仓库之后，
+ * 「检查更新」和「GitHub 仓库」两个入口会一起指向自己的地址。
+ */
+private fun repositoryPath(): String = BuildConfig.UPDATE_REPO.ifBlank { FALLBACK_REPOSITORY }
+
+/** 没有配置更新源时的兜底仓库（本项目官方仓库）。 */
+private const val FALLBACK_REPOSITORY = "hmilyld/daytrail"
+
+private fun repositoryUrl(): String = "https://github.com/${repositoryPath()}"
+
+/** 用浏览器打开外部链接。没有浏览器时静默失败，不打断设置页。 */
+private fun openUrl(
+    context: Context,
+    url: String,
+) {
+    runCatching {
+        context.startActivity(
+            Intent(Intent.ACTION_VIEW, url.toUri())
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
         )
     }
 }
