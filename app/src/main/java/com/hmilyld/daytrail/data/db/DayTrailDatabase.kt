@@ -50,6 +50,7 @@ import com.hmilyld.daytrail.data.db.entity.TrackPointEntity
         DiagnosticEventEntity::class,
         TrackEditEntity::class,
     ],
+    // 必须与 companion 里的 DB_VERSION 保持一致（KSP 不认类内 const 作为注解实参）。
     version = 5,
     exportSchema = true,
 )
@@ -70,8 +71,19 @@ abstract class DayTrailDatabase : RoomDatabase() {
 
     abstract fun trackEditDao(): TrackEditDao
 
+    /** 8 张表的行数。备份清单要用；传表名进来，避免 data.db 反向依赖 data.backup。 */
+    internal fun rowCounts(tables: List<String>): Map<String, Long> {
+        val db = openHelper.readableDatabase
+        return tables.associateWith { table ->
+            val cursor = db.query("SELECT COUNT(*) FROM `$table`")
+            cursor.use { if (it.moveToFirst()) it.getLong(0) else 0L }
+        }
+    }
+
     companion object {
-        private const val NAME = "daytrail.db"
+        /** 备份模块要知道库文件名与版本才能校验/替换，但这里不能改 schema。 */
+        internal const val NAME = "daytrail.db"
+        internal const val DB_VERSION = 5
 
         /** v1 → v2：只加一张表，不动已有数据。 */
         private val MIGRATION_1_2 =
