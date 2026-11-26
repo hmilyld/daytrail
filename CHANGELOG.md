@@ -16,6 +16,10 @@
 
 ## [Unreleased]
 
+---
+
+## [0.5.3] - 2026-11-26
+
 ### 修复
 
 - CI 打包时从 repository secrets 重建 `local.properties` 注入高德 Key。
