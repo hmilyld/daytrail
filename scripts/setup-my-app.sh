@@ -431,7 +431,7 @@ fi
 HAS_KEYSTORE=0
 [ -f "$RELEASE_JKS" ] && [ -f "$KEYSTORE_PROPERTIES" ] && HAS_KEYSTORE=1
 CURRENT_KEY_RELEASE=$(get_property_line "$LOCAL_PROPERTIES" 'AMAP_KEY_RELEASE' || true)
-CURRENT_KEY_WEB=$(get_property_line "$LOCAL_PROPERTIES" 'AMAP_KEY_WEB' || true)
+CURRENT_KEY_WEB=$(get_property_line "$LOCAL_PROPERTIES" 'AMAP_WEB_KEY' || true)
 CURRENT_KEY_DEBUG=$(get_property_line "$LOCAL_PROPERTIES" 'AMAP_KEY_DEBUG' || true)
 
 printf '\n  现在的状态：\n'
@@ -706,7 +706,7 @@ if [ "$DRY_RUN" -eq 0 ]; then
         ok '已创建 local.properties 并写入 SDK 路径'
     fi
     [ -n "$FINAL_KEY_RELEASE" ] && set_property_line "$LOCAL_PROPERTIES" 'AMAP_KEY_RELEASE' "$FINAL_KEY_RELEASE"
-    [ -n "$FINAL_KEY_WEB" ] && set_property_line "$LOCAL_PROPERTIES" 'AMAP_KEY_WEB' "$FINAL_KEY_WEB"
+    [ -n "$FINAL_KEY_WEB" ] && set_property_line "$LOCAL_PROPERTIES" 'AMAP_WEB_KEY' "$FINAL_KEY_WEB"
     [ -n "$FINAL_KEY_DEBUG" ] && set_property_line "$LOCAL_PROPERTIES" 'AMAP_KEY_DEBUG' "$FINAL_KEY_DEBUG"
 
     current_repo=$(get_property_line "$GRADLE_PROPERTIES" 'app.updateRepo' || true)

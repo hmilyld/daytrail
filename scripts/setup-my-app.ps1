@@ -525,7 +525,7 @@ if (Test-Path $script:IconColorPath) {
 
 $hasKeystore = (Test-Path $script:ReleaseJksPath) -and (Test-Path $script:KeystorePropertiesPath)
 $currentKeyRelease = Get-AmapKeyFromLocal 'AMAP_KEY_RELEASE'
-$currentKeyWeb = Get-AmapKeyFromLocal 'AMAP_KEY_WEB'
+$currentKeyWeb = Get-AmapKeyFromLocal 'AMAP_WEB_KEY'
 $currentKeyDebug = Get-AmapKeyFromLocal 'AMAP_KEY_DEBUG'
 
 Write-Host ''
@@ -773,7 +773,7 @@ if (-not $DryRun) {
         Write-Ok '已创建 local.properties 并写入 SDK 路径'
     }
     if ($finalKeyRelease) { Set-PropertyLine -Path $script:LocalPropertiesPath -Key 'AMAP_KEY_RELEASE' -Value $finalKeyRelease }
-    if ($finalKeyWeb) { Set-PropertyLine -Path $script:LocalPropertiesPath -Key 'AMAP_KEY_WEB' -Value $finalKeyWeb }
+    if ($finalKeyWeb) { Set-PropertyLine -Path $script:LocalPropertiesPath -Key 'AMAP_WEB_KEY' -Value $finalKeyWeb }
     if ($finalKeyDebug) { Set-PropertyLine -Path $script:LocalPropertiesPath -Key 'AMAP_KEY_DEBUG' -Value $finalKeyDebug }
 
     # 更新源必须指向自己的仓库或留空，否则会去拉本项目的 Release，签名校验必然失败。

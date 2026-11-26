@@ -16,6 +16,12 @@
 
 ## [Unreleased]
 
+### 修复
+
+- CI 打包时从 repository secrets 重建 `local.properties` 注入高德 Key。
+  v0.5.2 的正式包因 CI 没有该文件，地图与联网功能（补全名称 / 补全路线）全是空 Key
+- 一键改造向导写入 Web Key 的属性名改为 `AMAP_WEB_KEY`，与构建脚本一致
+
 ---
 
 ## [0.5.2] - 2026-11-25
