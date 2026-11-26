@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.IosShare
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DatePicker
@@ -26,18 +27,24 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.hmilyld.daytrail.R
+import com.hmilyld.daytrail.core.Changelog
 import com.hmilyld.daytrail.data.export.ExportFormat
 import com.hmilyld.daytrail.data.export.ExportRange
 import com.hmilyld.daytrail.ui.components.trailSegmentedColors
 import com.hmilyld.daytrail.ui.theme.TrailSpacing
+import com.hmilyld.daytrail.ui.update.UpdateNotesView
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -291,3 +298,79 @@ private fun rangeTitle(option: ExportRangeOption): Int =
         ExportRangeOption.THIS_MONTH -> R.string.export_range_month
         ExportRangeOption.CUSTOM -> R.string.export_range_custom
     }
+
+/** CHANGELOG 在 assets 里的名字，由 `app/build.gradle.kts` 的生成任务提供。 */
+private const val CHANGELOG_ASSET = "CHANGELOG.md"
+
+/**
+ * 「关于 → 版本」点开的本版本更新内容。
+ *
+ * 内容来自随 APK 打包的 CHANGELOG.md（离线可看，见 [Changelog]）：
+ * 只取当前安装版本的那一节，而不是最新版——用户升级前看到的应当是
+ * 「我装的这一版改了什么」。
+ */
+@Composable
+internal fun VersionNotesDialog(
+    versionName: String,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    var markdown by remember { mutableStateOf<String?>(null) }
+    var loaded by remember { mutableStateOf(false) }
+
+    LaunchedEffect(versionName) {
+        markdown =
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    context.assets
+                        .open(CHANGELOG_ASSET)
+                        .bufferedReader()
+                        .use { it.readText() }
+                }.getOrNull()
+            }
+        loaded = true
+    }
+
+    val notes =
+        remember(markdown, versionName) {
+            markdown?.let { Changelog.sectionFor(it, versionName) }
+        }
+    val version = remember(versionName) { Changelog.normalizeVersion(versionName) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(imageVector = Icons.Outlined.Info, contentDescription = null) },
+        title = { Text(text = stringResource(R.string.settings_version_notes_title, version)) },
+        text = {
+            Column(
+                modifier =
+                    Modifier
+                        .heightIn(max = 420.dp)
+                        .verticalScroll(rememberScrollState()),
+            ) {
+                when {
+                    !loaded ->
+                        Text(
+                            text = stringResource(R.string.settings_version_notes_loading),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+
+                    notes.isNullOrBlank() ->
+                        Text(
+                            text = stringResource(R.string.settings_version_notes_missing),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+
+                    else -> UpdateNotesView(notes = notes.orEmpty())
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = stringResource(R.string.action_close))
+            }
+        },
+    )
+}

@@ -55,6 +55,35 @@ fun appApplicationId(): String =
         .trim()
         .ifEmpty { "com.hmilyld.daytrail" }
 
+/**
+ * 把仓库根目录的 CHANGELOG.md 打包进 APK 的 assets，供「关于 → 版本」离线读取。
+ *
+ * 不在 app/src/main/assets 里手抄一份：版本说明必须与发布说明同源，
+ * 手抄的那份迟早会和根目录分叉。生成目录通过 Variant API 注册成 assets 源，
+ * 不依赖约定目录，Release 的资源裁剪也不会漏掉它。
+ */
+abstract class CopyChangelogAsset : DefaultTask() {
+    @get:InputFile
+    abstract val changelog: RegularFileProperty
+
+    @get:OutputDirectory
+    abstract val outputDirectory: DirectoryProperty
+
+    @TaskAction
+    fun copyChangelog() {
+        val target = outputDirectory.file("CHANGELOG.md").get().asFile
+        target.parentFile?.mkdirs()
+        changelog.get().asFile.copyTo(target, overwrite = true)
+    }
+}
+
+/** 生成 changelog 的 assets 目录。每个变体都挂上，见下面的 `androidComponents`。 */
+val generateChangelogAsset =
+    tasks.register<CopyChangelogAsset>("generateChangelogAsset") {
+        changelog.set(rootProject.layout.projectDirectory.file("CHANGELOG.md"))
+        outputDirectory.set(layout.buildDirectory.dir("generated/changelogAssets"))
+    }
+
 android {
     namespace = "com.hmilyld.daytrail"
     compileSdk = 37
@@ -163,6 +192,13 @@ kotlin {
  * 同时 Compose Preview 的布局渲染需要 host test 打包资源，缺了会直接构建失败。
  */
 androidComponents {
+    // 每个变体的 assets 都加上「根目录 CHANGELOG.md」的生成目录。
+    onVariants { variant ->
+        variant.sources.assets?.addGeneratedSourceDirectory(
+            generateChangelogAsset,
+            { it.outputDirectory },
+        )
+    }
     beforeVariants { variantBuilder ->
         variantBuilder.hostTests[com.android.build.api.variant.HostTestBuilder.UNIT_TEST_TYPE]
             ?.enable = true
