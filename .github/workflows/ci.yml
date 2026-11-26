@@ -30,6 +30,21 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x gradlew
 
+      # local.properties 不进 Git，构建脚本只从那里读高德 Key。
+      # CI 必须从 repository secrets 重建，否则包里的地图和联网功能全是空 Key。
+      # fork 的 PR 拿不到 secrets，此时写空串：照常构建，联网功能不可用。
+      - name: Provide AMAP keys
+        env:
+          AMAP_KEY_DEBUG: ${{ secrets.AMAP_KEY_DEBUG }}
+          AMAP_KEY_RELEASE: ${{ secrets.AMAP_KEY_RELEASE }}
+          AMAP_WEB_KEY: ${{ secrets.AMAP_WEB_KEY }}
+        run: |
+          cat > local.properties <<EOF
+          AMAP_KEY_DEBUG=$AMAP_KEY_DEBUG
+          AMAP_KEY_RELEASE=$AMAP_KEY_RELEASE
+          AMAP_WEB_KEY=$AMAP_WEB_KEY
+          EOF
+
       - name: Install Android SDK packages
         run: |
           SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"

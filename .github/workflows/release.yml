@@ -27,6 +27,20 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x gradlew
 
+      # local.properties 不进 Git，构建脚本只从那里读高德 Key。
+      # 正式包必须带上仓库 secrets 里的 Key，否则用户装到手会提示没配置。
+      - name: Provide AMAP keys
+        env:
+          AMAP_KEY_DEBUG: ${{ secrets.AMAP_KEY_DEBUG }}
+          AMAP_KEY_RELEASE: ${{ secrets.AMAP_KEY_RELEASE }}
+          AMAP_WEB_KEY: ${{ secrets.AMAP_WEB_KEY }}
+        run: |
+          cat > local.properties <<EOF
+          AMAP_KEY_DEBUG=$AMAP_KEY_DEBUG
+          AMAP_KEY_RELEASE=$AMAP_KEY_RELEASE
+          AMAP_WEB_KEY=$AMAP_WEB_KEY
+          EOF
+
       - name: Install Android SDK packages
         run: |
           SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
