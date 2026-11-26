@@ -1,9 +1,13 @@
 package com.hmilyld.daytrail
 
 import android.content.Context
+import com.hmilyld.daytrail.data.backup.BackupCoordinator
+import com.hmilyld.daytrail.data.backup.BackupManager
+import com.hmilyld.daytrail.data.backup.BackupRestore
 import com.hmilyld.daytrail.data.db.DayTrailDatabase
 import com.hmilyld.daytrail.data.diagnostics.DiagnosticLog
 import com.hmilyld.daytrail.data.export.ExportManager
+import com.hmilyld.daytrail.data.export.PlaceExportManager
 import com.hmilyld.daytrail.data.geocode.PlaceAutoNamer
 import com.hmilyld.daytrail.data.geocode.ReverseGeocodeClient
 import com.hmilyld.daytrail.data.import.ImportManager
@@ -39,7 +43,8 @@ class AppContainer(
     /** 记录状态只存在内存里，进程重启即归零，与实际服务状态保持一致。 */
     val recordingState: RecordingStateHolder = RecordingStateHolder()
 
-    private val database: DayTrailDatabase by lazy { DayTrailDatabase.create(appContext) }
+    /** 备份模块需要一致性快照与行数；仍然 lazy，启动期替换数据库不受影响。 */
+    internal val database: DayTrailDatabase by lazy { DayTrailDatabase.create(appContext) }
 
     /** 逆地理编码：坐标 → 粗略地名。复用纠偏那个 Web 服务 Key。 */
     val reverseGeocodeClient: ReverseGeocodeClient by lazy { ReverseGeocodeClient() }
@@ -54,6 +59,18 @@ class AppContainer(
         LocalTrackRepository(database, autoNamer = placeAutoNamer)
     }
 
+    /** 完整备份 / 恢复。与导出不同：它是整个数据库的无损快照。 */
+    val backupManager: BackupManager by lazy {
+        BackupManager(appContext, database, settingsStore, recordingState)
+    }
+
+    /**
+     * 启动期数据库替换的结果，供设置页提示一次。
+     * 由 [DayTrailApplication] 在创建容器后写入，读取后置空。
+     */
+    @Volatile
+    internal var restoreOutcome: BackupRestore.ApplyResult? = null
+
     /** 云端接缝 ②：当前为空实现，二期替换即可。 */
     val syncGateway: SyncGateway = NoOpSyncGateway()
 
@@ -65,6 +82,11 @@ class AppContainer(
 
     /** 数据导出。用 SAF 让用户选择保存位置，不需要存储权限。 */
     val exportManager: ExportManager by lazy { ExportManager(appContext, trackRepository) }
+
+    /** 地点分享文本与地点导出（GPX / GeoJSON），与轨迹导出共用 SAF 模式。 */
+    val placeExportManager: PlaceExportManager by lazy {
+        PlaceExportManager(appContext, trackRepository)
+    }
 
     /**
      * 数据导入。
@@ -84,5 +106,10 @@ class AppContainer(
     /** 更新流程的状态与动作，设置页与启动检查共用同一个实例。 */
     val updateCoordinator: UpdateCoordinator by lazy {
         UpdateCoordinator(appContext, updateChecker, appScope)
+    }
+
+    /** 备份 / 恢复动作。用应用级 scope，旋转屏幕不会取消正在进行的备份。 */
+    val backupCoordinator: BackupCoordinator by lazy {
+        BackupCoordinator(appContext, backupManager, appScope)
     }
 }

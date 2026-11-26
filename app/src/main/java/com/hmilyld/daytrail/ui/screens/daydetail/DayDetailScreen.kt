@@ -12,15 +12,16 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Fullscreen
 import androidx.compose.material.icons.outlined.FullscreenExit
+import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Route
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -39,14 +40,19 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -56,6 +62,8 @@ import com.amap.api.maps.AMap
 import com.hmilyld.daytrail.AppContainer
 import com.hmilyld.daytrail.R
 import com.hmilyld.daytrail.core.GeoPoint
+import com.hmilyld.daytrail.domain.PlaybackFrame
+import com.hmilyld.daytrail.domain.TrackPlayback
 import com.hmilyld.daytrail.domain.TrackVertex
 import com.hmilyld.daytrail.ui.UiText
 import com.hmilyld.daytrail.ui.appViewModelFactory
@@ -63,12 +71,14 @@ import com.hmilyld.daytrail.ui.components.EmptyState
 import com.hmilyld.daytrail.ui.components.MapAccessibilityOverlay
 import com.hmilyld.daytrail.ui.components.Metric
 import com.hmilyld.daytrail.ui.components.MetricRow
+import com.hmilyld.daytrail.ui.components.SectionCard
 import com.hmilyld.daytrail.ui.components.TimelineRow
 import com.hmilyld.daytrail.ui.components.TimelineTone
 import com.hmilyld.daytrail.ui.components.immersiveSafePadding
 import com.hmilyld.daytrail.ui.components.map.AmapView
 import com.hmilyld.daytrail.ui.components.map.MapControlButton
 import com.hmilyld.daytrail.ui.components.map.MapUnavailablePlaceholder
+import com.hmilyld.daytrail.ui.components.map.PlaybackOverlay
 import com.hmilyld.daytrail.ui.components.map.TrackEditOverlay
 import com.hmilyld.daytrail.ui.components.map.TrackOverlay
 import com.hmilyld.daytrail.ui.components.map.rememberAmapAvailable
@@ -76,6 +86,9 @@ import com.hmilyld.daytrail.ui.resolve
 import com.hmilyld.daytrail.ui.resolveJoined
 import com.hmilyld.daytrail.ui.theme.DayTrailTheme
 import com.hmilyld.daytrail.ui.theme.TrailSpacing
+import kotlinx.coroutines.isActive
+import java.time.Instant
+import java.time.ZoneId
 
 /**
  * 单日详情：地图 + 时间轴。
@@ -146,11 +159,75 @@ private fun DayDetailContent(
     var amap by remember { mutableStateOf<AMap?>(null) }
     var expanded by rememberSaveable { mutableStateOf(false) }
     var confirmDiscard by rememberSaveable { mutableStateOf(false) }
+    var selectedEntryKey by rememberSaveable { mutableStateOf<String?>(null) }
     val polylineColor = MaterialTheme.colorScheme.primary.toArgb()
 
+    var playback by rememberSaveable(saver = PlaybackSaver) {
+        mutableStateOf(PlaybackUiState())
+    }
+    val frame = remember { mutableStateOf<PlaybackFrame?>(null) }
+    val spans =
+        remember(state.playbackSamples, state.playbackGaps, state.playbackStays) {
+            TrackPlayback.spans(
+                state.playbackSamples,
+                state.playbackGaps,
+                state.playbackStays,
+            )
+        }
+    val autoSpeed = remember(spans) { TrackPlayback.autoSpeed(spans) }
+    val effectiveSpeed = if (playback.auto) autoSpeed else playback.speed
+    val timeline =
+        remember(spans, effectiveSpeed, state.playbackStays) {
+            TrackPlayback.timeline(spans, effectiveSpeed, state.playbackStays)
+        }
+    val currentTime =
+        remember(frame.value?.tsMs) {
+            val ts = frame.value?.tsMs
+            if (ts == null) {
+                ""
+            } else {
+                val time = Instant.ofEpochMilli(ts).atZone(ZoneId.systemDefault()).toLocalTime()
+                "%02d:%02d".format(time.hour, time.minute)
+            }
+        }
+
+    // 只有时间轴本身变化时才重置指针。逐帧推进直接写在时钟循环里，
+    // 不再「每帧重启一个 LaunchedEffect」——那是回放指针抖动的主要来源。
+    LaunchedEffect(timeline) {
+        frame.value = timeline.frameAt(playback.elapsedMs)
+    }
+
+    // 回放时钟：elapsed 是墙上时间，倍速已经在时间轴里折算好。
+    LaunchedEffect(playback.active, playback.playing, timeline) {
+        if (!playback.active || !playback.playing) return@LaunchedEffect
+        var last = withFrameNanos { it }
+        while (isActive) {
+            val now = withFrameNanos { it }
+            val delta = (now - last) / 1_000_000L
+            last = now
+            val next = playback.elapsedMs + delta
+            if (next >= timeline.durationMs) {
+                playback = playback.copy(elapsedMs = timeline.durationMs, playing = false)
+                frame.value = timeline.frameAt(timeline.durationMs)
+                break
+            }
+            frame.value = timeline.frameAt(next)
+            playback = playback.copy(elapsedMs = next)
+        }
+    }
+
+    fun startPlayback() {
+        // 回放与手动微调互斥：两者都要独占「地图怎么画」，同时开着只会互相打架。
+        onCancelEdit()
+        expanded = false
+        playback = PlaybackUiState(active = true, auto = true, speed = autoSpeed)
+        frame.value = timeline.frameAt(0L)
+    }
+
     val editing = editState.active
-    // 编辑永远是全屏的：顶点在 60% 高的地图卡里根本点不中
-    val fullscreen = expanded || editing
+    // 编辑永远是全屏的：顶点在 60% 高的地图卡里根本点不中。
+    // 回放也要露出时间轴里的回放条，所以同样不进全屏。
+    val fullscreen = (expanded || editing) && !playback.active
 
     // 返回键的优先级：先问「放弃修改」，再退全屏，最后才退出页面。
     BackHandler(enabled = fullscreen) {
@@ -175,6 +252,44 @@ private fun DayDetailContent(
             dismissButton = {
                 TextButton(onClick = { confirmDiscard = false }) {
                     Text(stringResource(R.string.edit_keep_editing))
+                }
+            },
+        )
+    }
+
+    // 时间轴条目详情：列表只有 HH:mm，这里给到秒，并写明地点/事项。
+    val selectedEntry = state.entries.firstOrNull { entryKey(it) == selectedEntryKey }
+    if (selectedEntry != null) {
+        val entry = selectedEntry
+        AlertDialog(
+            onDismissRequest = { selectedEntryKey = null },
+            title = { Text(stringResource(R.string.timeline_detail_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(TrailSpacing.sm)) {
+                    Text(
+                        text = stringResource(R.string.timeline_detail_time, entry.exactTime),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text(
+                        text =
+                            stringResource(
+                                R.string.timeline_detail_place,
+                                entry.title.resolve(),
+                            ),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    entry.detail?.let { detail ->
+                        Text(
+                            text = stringResource(R.string.timeline_detail_note, detail.resolve()),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { selectedEntryKey = null }) {
+                    Text(stringResource(R.string.action_close))
                 }
             },
         )
@@ -248,6 +363,9 @@ private fun DayDetailContent(
                             mapAvailable = mapAvailable,
                             expanded = true,
                             onToggleFullscreen = {},
+                            playback = playback,
+                            frame = frame,
+                            onMapDragged = { playback = playback.copy(follow = false) },
                             modifier =
                                 Modifier
                                     .weight(1f)
@@ -277,6 +395,9 @@ private fun DayDetailContent(
                             mapAvailable = mapAvailable,
                             expanded = false,
                             onToggleFullscreen = { expanded = true },
+                            playback = playback,
+                            frame = frame,
+                            onMapDragged = { playback = playback.copy(follow = false) },
                             modifier =
                                 Modifier
                                     .weight(MAP_WEIGHT)
@@ -285,11 +406,28 @@ private fun DayDetailContent(
                         VerticalDivider()
                         TimelinePane(
                             state = state,
-                            canEditTrack = mapAvailable && state.canEditTrack,
+                            canEditTrack = mapAvailable && state.canEditTrack && !playback.active,
                             onCorrectRoute = onCorrectRoute,
                             onRestoreRoute = onRestoreRoute,
                             onBeginEdit = onBeginEdit,
                             onRestoreEdit = onRestoreEdit,
+                            playback = playback,
+                            frame = frame,
+                            currentTime = currentTime,
+                            autoSpeed = autoSpeed,
+                            timelineDurationMs = timeline.durationMs,
+                            onStartPlayback = { startPlayback() },
+                            onTogglePlay = {
+                                playback = playback.copy(playing = !playback.playing)
+                            },
+                            onSeek = { playback = playback.copy(elapsedMs = it) },
+                            onAutoSpeed = { playback = playback.copy(auto = true) },
+                            onManualSpeed = { speed ->
+                                playback = playback.copy(auto = false, speed = speed)
+                            },
+                            onFollow = { playback = playback.copy(follow = it) },
+                            onStopPlayback = { playback = PlaybackUiState() },
+                            onEntryClick = { selectedEntryKey = entryKey(it) },
                             modifier =
                                 Modifier
                                     .weight(1f - MAP_WEIGHT)
@@ -307,6 +445,9 @@ private fun DayDetailContent(
                             mapAvailable = mapAvailable,
                             expanded = expanded,
                             onToggleFullscreen = { expanded = !expanded },
+                            playback = playback,
+                            frame = frame,
+                            onMapDragged = { playback = playback.copy(follow = false) },
                             modifier =
                                 Modifier
                                     .fillMaxWidth()
@@ -321,11 +462,40 @@ private fun DayDetailContent(
                         if (!expanded) {
                             TimelinePane(
                                 state = state,
-                                canEditTrack = mapAvailable && state.canEditTrack,
+                                canEditTrack =
+                                    mapAvailable && state.canEditTrack && !playback.active,
                                 onCorrectRoute = onCorrectRoute,
                                 onRestoreRoute = onRestoreRoute,
                                 onBeginEdit = onBeginEdit,
                                 onRestoreEdit = onRestoreEdit,
+                                playback = playback,
+                                frame = frame,
+                                currentTime = currentTime,
+                                autoSpeed = autoSpeed,
+                                timelineDurationMs = timeline.durationMs,
+                                onStartPlayback = { startPlayback() },
+                                onTogglePlay = {
+                                    // 播完后再点播放要从头开始，否则停在末帧一点不动。
+                                    if (!playback.playing &&
+                                        playback.elapsedMs >= timeline.durationMs
+                                    ) {
+                                        playback = playback.copy(elapsedMs = 0L, playing = true)
+                                        frame.value = timeline.frameAt(0L)
+                                    } else {
+                                        playback = playback.copy(playing = !playback.playing)
+                                    }
+                                },
+                                onSeek = { value ->
+                                    playback = playback.copy(elapsedMs = value)
+                                    frame.value = timeline.frameAt(value)
+                                },
+                                onAutoSpeed = { playback = playback.copy(auto = true) },
+                                onManualSpeed = { speed ->
+                                    playback = playback.copy(auto = false, speed = speed)
+                                },
+                                onFollow = { playback = playback.copy(follow = it) },
+                                onStopPlayback = { playback = PlaybackUiState() },
+                                onEntryClick = { selectedEntryKey = entryKey(it) },
                                 modifier =
                                     Modifier
                                         .weight(1f - MAP_WEIGHT)
@@ -348,6 +518,9 @@ private fun TrackMapPane(
     mapAvailable: Boolean,
     expanded: Boolean,
     onToggleFullscreen: () -> Unit,
+    playback: PlaybackUiState = PlaybackUiState(),
+    frame: State<PlaybackFrame?>? = null,
+    onMapDragged: () -> Unit = {},
     modifier: Modifier = Modifier,
     editState: TrackEditUiState = TrackEditUiState(),
     onSelectVertex: (TrackVertex) -> Unit = {},
@@ -383,12 +556,31 @@ private fun TrackMapPane(
                     stayCentroids = state.stayCentroids,
                     polylineColor = polylineColor,
                     // 按日期缩一次；进入全屏再缩一次看全整条轨迹。
-                    fitKey = if (expanded) "${state.dateKey}-full" else state.dateKey,
+                    // 回放结束（或点停止）时 key 变化，TrackOverlay 会再缩一次，
+                    // 让整条轨迹重新落进屏幕——回放中镜头一直在跟指针，不该自动缩放。
+                    fitKey =
+                        "${state.dateKey}-" +
+                            if (playback.active) {
+                                "playback"
+                            } else if (expanded) {
+                                "full"
+                            } else {
+                                "day"
+                            },
                     // 纠偏后的折线是**路网顶点**，不是采样点，画出来会误导。
                     // 手动微调过的线同理：原始采样点已经不在这条线上了。
                     sampleDots = state.routeOverride == null && !state.hasManualEdit,
                     // 用户画的线不能再被抽稀，否则刚拖出来的顶点会被删掉。
                     simplify = !state.hasManualEdit,
+                )
+            }
+            if (playback.active && frame != null) {
+                PlaybackOverlay(
+                    amap = amap,
+                    frame = frame,
+                    active = true,
+                    follow = playback.follow,
+                    onMapDragged = onMapDragged,
                 )
             }
             // 编辑态底部是工具条，无障碍浮层会和它叠在一起；
@@ -459,6 +651,19 @@ private fun TimelinePane(
     onRestoreRoute: () -> Unit,
     onBeginEdit: () -> Unit,
     onRestoreEdit: () -> Unit,
+    playback: PlaybackUiState = PlaybackUiState(),
+    frame: State<PlaybackFrame?>? = null,
+    currentTime: String = "",
+    autoSpeed: Double = 1.0,
+    timelineDurationMs: Long = 0L,
+    onStartPlayback: () -> Unit = {},
+    onTogglePlay: () -> Unit = {},
+    onSeek: (Long) -> Unit = {},
+    onAutoSpeed: () -> Unit = {},
+    onManualSpeed: (Double) -> Unit = {},
+    onFollow: (Boolean) -> Unit = {},
+    onStopPlayback: () -> Unit = {},
+    onEntryClick: (TimelineEntry) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Surface(
@@ -505,38 +710,63 @@ private fun TimelinePane(
                         )
                     }
                     item {
-                        if (state.canCorrectRoute ||
-                            state.routeOverride != null ||
-                            state.correctingRoute ||
-                            canEditTrack ||
-                            state.hasManualEdit
-                        ) {
-                            // 补全路线只覆盖驾车段，手动微调覆盖整天，
-                            // 所以两件事并排列在这里、互不干扰。
-                            CorrectionBar(
-                                state = state,
-                                canEditTrack = canEditTrack,
-                                onCorrect = onCorrectRoute,
-                                onRestore = onRestoreRoute,
-                                onBeginEdit = onBeginEdit,
-                                onRestoreEdit = onRestoreEdit,
-                            )
+                        when {
+                            playback.active ->
+                                PlaybackBar(
+                                    state = playback,
+                                    currentTime = currentTime,
+                                    durationMs = timelineDurationMs,
+                                    inGap = frame?.value?.inGap == true,
+                                    inStay = frame?.value?.inStay == true,
+                                    recording = state.recording,
+                                    onTogglePlay = onTogglePlay,
+                                    onSeek = onSeek,
+                                    onAuto = onAutoSpeed,
+                                    onSpeed = onManualSpeed,
+                                    onFollow = onFollow,
+                                    onStop = onStopPlayback,
+                                )
+                            state.hasTrack ->
+                                TrackActionsCard(
+                                    state = state,
+                                    canEditTrack = canEditTrack,
+                                    onCorrect = onCorrectRoute,
+                                    onRestore = onRestoreRoute,
+                                    onBeginEdit = onBeginEdit,
+                                    onRestoreEdit = onRestoreEdit,
+                                    onPlayback = onStartPlayback,
+                                    canPlayback = state.canPlayback,
+                                )
                         }
                     }
                 }
-                itemsIndexed(items = state.entries) { index, entry ->
-                    TimelineRow(
-                        time = entry.time,
-                        title = entry.title.resolve(),
-                        detail = entry.detail?.resolve().orEmpty(),
-                        tone = entry.kind.toTone(),
-                        showConnector = index != state.entries.lastIndex,
-                    )
+                if (state.entries.isNotEmpty()) {
+                    item {
+                        // 和首页「今日行程」一样用 SectionCard 分组。单日详情以前把
+                        // 时间轴裸放在页面里，和首页样式不一致，看起来很怪。
+                        SectionCard(
+                            title = stringResource(R.string.day_detail_timeline_title),
+                        ) {
+                            state.entries.forEachIndexed { index, entry ->
+                                TimelineRow(
+                                    time = entry.time,
+                                    title = entry.title.resolve(),
+                                    detail = entry.detail?.resolve().orEmpty(),
+                                    tone = entry.kind.toTone(),
+                                    showConnector = index != state.entries.lastIndex,
+                                    onRowClick = { onEntryClick(entry) },
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
     }
 }
+
+/** 时间轴条目的稳定标识。旋转后用它重新找回被点开的条目。 */
+private fun entryKey(entry: TimelineEntry): String = "${entry.sortKeyMs}|${entry.kind.name}"
 
 private fun TimelineKind.toTone(): TimelineTone =
     when (this) {
@@ -547,61 +777,197 @@ private fun TimelineKind.toTone(): TimelineTone =
     }
 
 /**
- * 「补全路线」与「微调显示」两行入口。
+ * 轨迹操作区。
  *
- * 补全路线只在用户点的时候联网一次，结果存成派生数据；
- * 微调显示完全离线，改的只是画出来的线，两个结果都随时可还原。
+ * 回放 / 补全路线 / 微调显示是三件独立的事，早期把它们挤在同一行里，
+ * 用户根本分不清哪个按钮改哪条线。现在固定成一张卡片、每件事一行：
+ * 左侧图标、中间标题 + 一行说明、右侧动作按钮。回放是首选操作，用
+ * primaryContainer 强调；另外两件只在可用的情况才出现（渐进披露）。
+ *
+ * 三者都排在时间轴里、地图下方，不叠在地图上（高德 logo 不能被遮挡）。
  */
 @Composable
-private fun CorrectionBar(
+private fun TrackActionsCard(
     state: DayDetailUiState,
     canEditTrack: Boolean,
     onCorrect: () -> Unit,
     onRestore: () -> Unit,
     onBeginEdit: () -> Unit,
     onRestoreEdit: () -> Unit,
+    onPlayback: () -> Unit,
+    canPlayback: Boolean,
     modifier: Modifier = Modifier,
 ) {
+    // 手动微调和纠偏是二选一：两者都写「这一天画哪条线」，微调优先级更高。
+    // 同时摆出来会让用户点了「补全路线」发现地图没变。
+    val showCorrection =
+        !state.hasManualEdit &&
+            (
+                state.canCorrectRoute ||
+                    state.routeOverride != null ||
+                    state.correctingRoute
+            )
+    val showEdit = canEditTrack || state.hasManualEdit
+
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainerLow,
-        shape = MaterialTheme.shapes.small,
+        shape = MaterialTheme.shapes.medium,
         modifier = modifier.fillMaxWidth(),
     ) {
         Column(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .padding(
-                        start = TrailSpacing.md,
-                        end = TrailSpacing.sm,
-                        top = 6.dp,
-                        bottom = 6.dp,
-                    ),
-            verticalArrangement = Arrangement.spacedBy(TrailSpacing.xs),
+                    .padding(vertical = TrailSpacing.sm),
         ) {
-            // 手动微调和纠偏是二选一：两者都写「这一天画哪条线」，
-            // 微调的优先级更高。同时摆出来会让用户点了「补全路线」发现地图没变。
-            val showCorrection =
-                !state.hasManualEdit &&
-                    (
-                        state.canCorrectRoute ||
-                            state.routeOverride != null ||
-                            state.correctingRoute
-                    )
+            Text(
+                text = stringResource(R.string.track_actions_title),
+                style = MaterialTheme.typography.titleSmall,
+                modifier =
+                    Modifier.padding(
+                        horizontal = TrailSpacing.lg,
+                        vertical = TrailSpacing.xs,
+                    ),
+            )
+
+            TrackActionRow(
+                icon = Icons.Outlined.PlayArrow,
+                title = stringResource(R.string.track_action_playback_title),
+                subtitle = stringResource(R.string.day_detail_playback_hint),
+                actionLabel = stringResource(R.string.day_detail_playback),
+                onAction = onPlayback,
+                enabled = canPlayback,
+                highlighted = true,
+            )
 
             if (showCorrection) {
-                RouteCorrectionRow(state = state, onCorrect = onCorrect, onRestore = onRestore)
-                HorizontalDivider(
-                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
-                    modifier = Modifier.padding(end = TrailSpacing.sm),
+                TrackActionDivider()
+                val routeSubtitle =
+                    when {
+                        state.correctingRoute -> stringResource(R.string.day_detail_correcting)
+                        state.routeOverride != null ->
+                            stringResource(R.string.day_detail_route_done)
+                        state.routeError != null ->
+                            state.routeError
+                                .resolve()
+                        else -> stringResource(R.string.day_detail_correct_route_hint)
+                    }
+                val routeAction =
+                    when {
+                        state.routeOverride != null ->
+                            stringResource(R.string.day_detail_route_restore)
+                        state.routeError != null -> stringResource(R.string.day_detail_route_retry)
+                        else -> stringResource(R.string.day_detail_correct_route)
+                    }
+                TrackActionRow(
+                    icon = Icons.Outlined.Route,
+                    title = stringResource(R.string.track_action_correct_title),
+                    subtitle = routeSubtitle,
+                    actionLabel = routeAction,
+                    onAction = if (state.routeOverride != null) onRestore else onCorrect,
+                    enabled = !state.correctingRoute,
+                    subtitleError = state.routeError != null,
                 )
             }
-            ManualEditRow(
-                state = state,
-                canEditTrack = canEditTrack,
-                onBeginEdit = onBeginEdit,
-                onRestoreEdit = onRestoreEdit,
+
+            if (showEdit) {
+                TrackActionDivider()
+                TrackActionRow(
+                    icon = Icons.Outlined.Edit,
+                    title = stringResource(R.string.track_action_edit_title),
+                    subtitle =
+                        stringResource(
+                            if (state.hasManualEdit) {
+                                R.string.day_detail_edit_done
+                            } else {
+                                R.string.day_detail_edit_track_hint
+                            },
+                        ),
+                    actionLabel =
+                        stringResource(
+                            if (state.hasManualEdit) {
+                                R.string.day_detail_edit_restore
+                            } else {
+                                R.string.day_detail_edit_track
+                            },
+                        ),
+                    onAction = if (state.hasManualEdit) onRestoreEdit else onBeginEdit,
+                    enabled = !state.hasManualEdit || canEditTrack,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TrackActionDivider() {
+    HorizontalDivider(
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+        modifier = Modifier.padding(horizontal = TrailSpacing.lg),
+    )
+}
+
+/** 一行操作：图标 + 标题/说明 + 右侧按钮。整行高度至少 64dp，按钮至少 48dp。 */
+@Composable
+private fun TrackActionRow(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    actionLabel: String,
+    onAction: () -> Unit,
+    enabled: Boolean,
+    highlighted: Boolean = false,
+    subtitleError: Boolean = false,
+) {
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = 64.dp)
+                .padding(horizontal = TrailSpacing.md),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(TrailSpacing.md),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(24.dp),
+            tint =
+                if (highlighted) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                color =
+                    if (highlighted) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
             )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.labelSmall,
+                color =
+                    if (subtitleError) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                maxLines = 2,
+            )
+        }
+        TextButton(
+            onClick = onAction,
+            enabled = enabled,
+            modifier = Modifier.heightIn(min = 48.dp),
+        ) {
+            Text(actionLabel)
         }
     }
 }
@@ -761,6 +1127,33 @@ private fun ManualEditRow(
  * 时间轴排在它下面；60% 在手机上大约是一屏的三分之二。
  */
 private const val MAP_WEIGHT = 0.6f
+
+private val PlaybackSaver =
+    Saver<MutableState<PlaybackUiState>, Any>(
+        save = { state ->
+            mapOf(
+                "active" to state.value.active,
+                "playing" to state.value.playing,
+                "elapsed" to state.value.elapsedMs,
+                "speed" to state.value.speed,
+                "auto" to state.value.auto,
+                "follow" to state.value.follow,
+            )
+        },
+        restore = { saved ->
+            val map = saved as? Map<*, *> ?: emptyMap<String, Any?>()
+            mutableStateOf(
+                PlaybackUiState(
+                    active = map["active"] as? Boolean ?: false,
+                    playing = map["playing"] as? Boolean ?: false,
+                    elapsedMs = map["elapsed"] as? Long ?: 0L,
+                    speed = map["speed"] as? Double ?: 1.0,
+                    auto = map["auto"] as? Boolean ?: true,
+                    follow = map["follow"] as? Boolean ?: true,
+                ),
+            )
+        },
+    )
 
 @Preview(showBackground = true, name = "单日详情")
 @Composable

@@ -198,6 +198,8 @@ internal fun SettingsNavRow(
     subtitle: String,
     onClick: () -> Unit,
     destructive: Boolean = false,
+    /** 副标题用告警色（例如「很久没备份」），标题与图标保持正常。 */
+    subtitleWarning: Boolean = false,
 ) {
     ListItem(
         headlineContent = {
@@ -211,7 +213,17 @@ internal fun SettingsNavRow(
                     },
             )
         },
-        supportingContent = { Text(text = subtitle) },
+        supportingContent = {
+            Text(
+                text = subtitle,
+                color =
+                    if (subtitleWarning) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+            )
+        },
         leadingContent = {
             Icon(
                 imageVector = icon,

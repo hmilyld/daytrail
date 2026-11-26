@@ -1,5 +1,8 @@
 ﻿package com.hmilyld.daytrail.ui.screens.places
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -9,6 +12,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -19,9 +23,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.FileDownload
+import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Place
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
@@ -36,7 +45,11 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -48,11 +61,14 @@ import com.hmilyld.daytrail.AppContainer
 import com.hmilyld.daytrail.R
 import com.hmilyld.daytrail.core.GeoPoint
 import com.hmilyld.daytrail.data.db.dao.PlaceSummary
+import com.hmilyld.daytrail.data.export.ExportFormat
+import com.hmilyld.daytrail.data.export.PlaceExportResult
 import com.hmilyld.daytrail.data.geocode.NamingFailure
 import com.hmilyld.daytrail.domain.PlaceNeighbors
 import com.hmilyld.daytrail.ui.appViewModelFactory
 import com.hmilyld.daytrail.ui.components.EmptyState
 import com.hmilyld.daytrail.ui.theme.TrailSpacing
+import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
 
@@ -79,6 +95,39 @@ fun PlacesScreen(
 
     val unnamedCount = places.count { it.place.label.isNullOrBlank() }
     val snackbar = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    var showExportDialog by rememberSaveable { mutableStateOf(false) }
+    var showOverflow by rememberSaveable { mutableStateOf(false) }
+    val exportSuccess = stringResource(R.string.places_export_success)
+    val exportEmpty = stringResource(R.string.places_export_empty)
+    val exportFailed = stringResource(R.string.places_export_failed)
+
+    fun runExport(
+        uri: Uri,
+        format: ExportFormat,
+    ) {
+        scope.launch {
+            val message =
+                when (val result = container.placeExportManager.export(uri, format)) {
+                    is PlaceExportResult.Success ->
+                        String.format(exportSuccess, result.placeCount)
+                    PlaceExportResult.Empty -> exportEmpty
+                    is PlaceExportResult.Failure -> String.format(exportFailed, result.message)
+                }
+            snackbar.showSnackbar(message)
+        }
+    }
+
+    // 两种格式各一个 launcher：CreateDocument 的 MIME 类型在创建时固定
+    val gpxLauncher =
+        rememberLauncherForActivityResult(
+            ActivityResultContracts.CreateDocument("application/gpx+xml"),
+        ) { uri -> uri?.let { runExport(it, ExportFormat.GPX) } }
+    val geojsonLauncher =
+        rememberLauncherForActivityResult(
+            ActivityResultContracts.CreateDocument("application/geo+json"),
+        ) { uri -> uri?.let { runExport(it, ExportFormat.GEOJSON) } }
+
     val namingLabel =
         when {
             naming -> R.string.places_autoname_running
@@ -144,6 +193,43 @@ fun PlacesScreen(
                             enabled = !naming && viewModel.canBackfill,
                         ) {
                             Text(text = stringResource(namingLabel))
+                        }
+                    }
+                    // 有「补全名称」按钮时把导出收进溢出菜单，窄屏不会挤成两行。
+                    Box {
+                        IconButton(
+                            onClick = {
+                                if (unnamedCount >
+                                    0
+                                ) {
+                                    showOverflow = true
+                                } else {
+                                    showExportDialog = true
+                                }
+                            },
+                            enabled = places.isNotEmpty(),
+                        ) {
+                            Icon(
+                                imageVector =
+                                    if (unnamedCount > 0) {
+                                        Icons.Outlined.MoreVert
+                                    } else {
+                                        Icons.Outlined.FileDownload
+                                    },
+                                contentDescription = stringResource(R.string.places_export),
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = showOverflow,
+                            onDismissRequest = { showOverflow = false },
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.places_export)) },
+                                onClick = {
+                                    showOverflow = false
+                                    showExportDialog = true
+                                },
+                            )
                         }
                     }
                 },
@@ -215,6 +301,56 @@ fun PlacesScreen(
                 }
             }
         }
+    }
+
+    if (showExportDialog) {
+        AlertDialog(
+            onDismissRequest = { showExportDialog = false },
+            title = { Text(stringResource(R.string.places_export_title)) },
+            text = {
+                Column {
+                    TextButton(
+                        onClick = {
+                            showExportDialog = false
+                            scope.launch {
+                                val name =
+                                    container.placeExportManager.suggestedName(ExportFormat.GPX)
+                                gpxLauncher.launch(name)
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.places_export_gpx),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                    TextButton(
+                        onClick = {
+                            showExportDialog = false
+                            scope.launch {
+                                val name =
+                                    container.placeExportManager.suggestedName(
+                                        ExportFormat.GEOJSON,
+                                    )
+                                geojsonLauncher.launch(name)
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.places_export_geojson),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showExportDialog = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            },
+        )
     }
 }
 

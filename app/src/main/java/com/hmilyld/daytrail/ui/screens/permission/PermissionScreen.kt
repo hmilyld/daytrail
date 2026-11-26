@@ -1,5 +1,6 @@
 ﻿package com.hmilyld.daytrail.ui.screens.permission
 
+import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -329,6 +330,13 @@ private fun PermissionRow(
     }
 }
 
+/** 权限是否齐备。同步读取，可在组合期直接算第一帧的颜色。 */
+private fun permissionsHealthy(context: Context): Boolean =
+    Permissions.hasFineLocation(context) &&
+        Permissions.hasBackgroundLocation(context) &&
+        Permissions.hasNotification(context) &&
+        Permissions.isLocationServiceEnabled(context)
+
 /** 供设置页复用：一行显示当前权限健康度。 */
 @Composable
 fun PermissionHealthSummary(
@@ -336,14 +344,12 @@ fun PermissionHealthSummary(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
-    var healthy by remember { mutableStateOf(false) }
+    // 初始值必须同步读真实状态。早期写死 false，导致每次进入页面第一帧是红色，
+    // resume 后才变绿——用户看到的是「先红后绿」的闪烁，像是权限刚坏又恢复。
+    var healthy by remember { mutableStateOf(permissionsHealthy(context)) }
 
     LifecycleResumeEffect(Unit) {
-        healthy =
-            Permissions.hasFineLocation(context) &&
-            Permissions.hasBackgroundLocation(context) &&
-            Permissions.hasNotification(context) &&
-            Permissions.isLocationServiceEnabled(context)
+        healthy = permissionsHealthy(context)
         onPauseOrDispose {}
     }
 

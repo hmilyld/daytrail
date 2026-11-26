@@ -18,8 +18,11 @@ import com.hmilyld.daytrail.data.repo.TrackRepository
 import com.hmilyld.daytrail.data.repo.toMarkerStay
 import com.hmilyld.daytrail.data.repo.toStaySegment
 import com.hmilyld.daytrail.data.route.GrasproadClient
+import com.hmilyld.daytrail.domain.PlaybackGap
+import com.hmilyld.daytrail.domain.PlaybackSample
 import com.hmilyld.daytrail.domain.RouteOverride
 import com.hmilyld.daytrail.domain.StayMarkers
+import com.hmilyld.daytrail.domain.StaySegment
 import com.hmilyld.daytrail.domain.TrackCorrection
 import com.hmilyld.daytrail.domain.TrackDisplay
 import com.hmilyld.daytrail.domain.TrackEdit
@@ -61,6 +64,8 @@ data class TimelineEntry(
     val detail: UiText? = null,
     /** 排序用的原始时间戳。不显示，只用于正确排序。 */
     val sortKeyMs: Long = 0L,
+    /** 精确到秒的时间，点开条目时显示。`time` 只有 HH:mm，不够用。 */
+    val exactTime: String = "",
 )
 
 /** 单日详情状态。 */
@@ -102,8 +107,20 @@ data class DayDetailUiState(
      * 也不在增量尾部（尾部条件是 `ts > cutoff`），从此在地图上消失。
      */
     val lastSampleMs: Long? = null,
+    /**
+     * 回放用的原始采样点，按时间升序、画线精度筛过。
+     * 手动微调与纠偏只影响画出来的线，**不参与回放**（见 `TrackPlayback`）。
+     */
+    val playbackSamples: List<PlaybackSample> = emptyList(),
+    /** 回放用的数据缺失区间，来自 `observeGaps`。 */
+    val playbackGaps: List<PlaybackGap> = emptyList(),
+    /** 回放用的停留段。时间窗内的点吸附到锚点，指针不跟 GPS 漂移来回窜。 */
+    val playbackStays: List<StaySegment> = emptyList(),
+    /** 这一天是否正在记录：回放时标注「截至现在」。 */
+    val recording: Boolean = false,
 ) {
     val hasTrack: Boolean get() = trackSegments.any { it.size >= 2 }
+    val canPlayback: Boolean get() = playbackSamples.size >= 2
 }
 
 /**
@@ -514,6 +531,7 @@ class DayDetailViewModel(
                     title = UiText.Res(R.string.timeline_start),
                     kind = TimelineKind.START,
                     sortKeyMs = start,
+                    exactTime = formatTimeWithSeconds(start, zone),
                 )
         }
 
@@ -529,6 +547,7 @@ class DayDetailViewModel(
                         ),
                     kind = TimelineKind.STOP,
                     sortKeyMs = stay.startMs,
+                    exactTime = formatTimeWithSeconds(stay.startMs, zone),
                 )
         }
 
@@ -544,6 +563,7 @@ class DayDetailViewModel(
                         ),
                     kind = TimelineKind.GAP,
                     sortKeyMs = gap.startMs,
+                    exactTime = formatTimeWithSeconds(gap.startMs, zone),
                 )
         }
 
@@ -554,6 +574,7 @@ class DayDetailViewModel(
                     title = UiText.Res(R.string.timeline_end),
                     kind = TimelineKind.END,
                     sortKeyMs = end,
+                    exactTime = formatTimeWithSeconds(end, zone),
                 )
         }
 
@@ -569,6 +590,18 @@ class DayDetailViewModel(
                     accuracyMeters = point.accuracyMeters,
                 )
             }
+        // 回放只读原始点，精度门槛与画线一致；一整天都没有精确点时退回全部点。
+        // 手动微调与纠偏是派生数据，不能混进回放，否则用户会以为回放改了里程。
+        val preciseSamples =
+            samples.filter { it.accuracyMeters <= TrackDisplay.MAX_LINE_ACCURACY_METERS }
+        val playbackSamples =
+            (if (preciseSamples.isEmpty()) samples else preciseSamples)
+                .map { PlaybackSample(it.timestampMs, it.point) }
+                .sortedBy { it.tsMs }
+        val playbackGaps = gaps.map { PlaybackGap(it.startMs, it.endMs) }
+        // 与地图折线共用同一份停留锚点。回放时这些点会吸附到锚点，
+        // 否则人明明坐在办公室没动，指针会跟着 GPS 漂移在楼里来回窜。
+        val playbackStays = stays.map { it.toStaySegment() }
         // 精度筛、毛刺修复、停留吸附、切段都在 TrackDisplay 里做，
         // 与今日页共用同一套，避免两处画出来的线不一样。
         // 有手动微调时它优先级最高；否则有纠偏结果时只替换驾车时间窗，
@@ -619,6 +652,10 @@ class DayDetailViewModel(
             hasManualEdit = edit != null,
             canEditTrack = TrackEditOps.isEditable(segments),
             lastSampleMs = endMs,
+            playbackSamples = playbackSamples,
+            playbackGaps = playbackGaps,
+            playbackStays = playbackStays,
+            recording = isRecording(dateKey),
         )
     }
 
@@ -671,6 +708,15 @@ class DayDetailViewModel(
     ): String {
         val time = Instant.ofEpochMilli(timestampMs).atZone(zone).toLocalTime()
         return "%02d:%02d".format(time.hour, time.minute)
+    }
+
+    /** 点到秒的精确时间，用于时间轴条目的详情弹窗。 */
+    private fun formatTimeWithSeconds(
+        timestampMs: Long,
+        zone: ZoneId,
+    ): String {
+        val time = Instant.ofEpochMilli(timestampMs).atZone(zone).toLocalTime()
+        return "%02d:%02d:%02d".format(time.hour, time.minute, time.second)
     }
 
     private fun formatTitle(dateKey: String): String {

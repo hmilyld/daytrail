@@ -1,7 +1,9 @@
 package com.hmilyld.daytrail
 
 import android.app.Application
+import android.util.Log
 import com.amap.api.maps.MapsInitializer
+import com.hmilyld.daytrail.data.backup.BackupRestore
 import com.hmilyld.daytrail.data.prefs.SettingsStore
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -28,9 +30,22 @@ class DayTrailApplication : Application() {
     override fun onCreate() {
         super.onCreate()
 
+        // 数据库替换必须早于 AppContainer：container 里的 database 是 lazy，
+        // 一旦有任何代码先触发 Room 打开，staged 的恢复文件就换不上去了。
+        // 设置已在准备阶段写入 DataStore，这里不需要第二次阻塞读。
+        val outcome = BackupRestore.applyPending(this)
+
         // 先建容器，再读同意状态：同意状态决定 SDK 初始化参数，
         // 必须在任何 MapView 创建之前确定。
         container = AppContainer(this)
+        container.restoreOutcome = outcome
+        when (outcome) {
+            is BackupRestore.ApplyResult.Failed ->
+                Log.w(TAG, "恢复失败：${outcome.message}")
+            is BackupRestore.ApplyResult.Applied ->
+                Log.i(TAG, "已应用恢复的数据库（备份时间 ${outcome.createdAt}）")
+            BackupRestore.ApplyResult.NothingToDo -> Unit
+        }
 
         // 同步读一次 DataStore：同意状态是 SDK 初始化的入参，没有异步余地。
         // 文件只有几 KB，首次读取在毫秒级；这也是 Application 里唯一允许的阻塞读。
@@ -74,4 +89,8 @@ class DayTrailApplication : Application() {
     /** 供 Composable 之外的地方读取容器（如前台服务）。 */
     val settingsStore: SettingsStore
         get() = container.settingsStore
+
+    private companion object {
+        const val TAG = "DayTrail"
+    }
 }

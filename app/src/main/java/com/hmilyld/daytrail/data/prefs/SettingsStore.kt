@@ -9,7 +9,9 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.hmilyld.daytrail.data.backup.BackupSettings
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 /** 采样档位。省电档是默认值，符合产品的「省电第一」取向。 */
@@ -132,6 +134,10 @@ class SettingsStore(
             ThemeMode.entries.getOrElse(ordinal) { ThemeMode.SYSTEM }
         }
 
+    /** 上次备份时间（毫秒），0 表示从未备份。只进白名单，不参与 SDK 初始化。 */
+    val lastBackupAt: Flow<Long> =
+        context.dataStore.data.map { prefs -> prefs[KEY_LAST_BACKUP_AT] ?: 0L }
+
     suspend fun setSamplingTier(tier: SamplingTier) {
         context.dataStore.edit { prefs -> prefs[KEY_SAMPLING_TIER] = tier.ordinal }
     }
@@ -182,6 +188,41 @@ class SettingsStore(
         context.dataStore.edit { prefs -> prefs[KEY_THEME_MODE] = mode.ordinal }
     }
 
+    suspend fun setLastBackupAt(timestampMs: Long) {
+        context.dataStore.edit { prefs -> prefs[KEY_LAST_BACKUP_AT] = timestampMs }
+    }
+
+    /** 生成设置白名单快照。枚举写 name，绝不写 ordinal。 */
+    suspend fun backupSnapshot(createdAtMs: Long): BackupSettings {
+        val prefs = context.dataStore.data.first()
+        val tier =
+            SamplingTier.entries.getOrElse(prefs[KEY_SAMPLING_TIER] ?: 0) {
+                SamplingTier.POWER_SAVER
+            }
+        val theme =
+            ThemeMode.entries.getOrElse(prefs[KEY_THEME_MODE] ?: 0) { ThemeMode.SYSTEM }
+        return BackupSettings(
+            samplingTier = tier.name,
+            learningEnabled = prefs[KEY_LEARNING_ENABLED] ?: true,
+            autoSleep = prefs[KEY_AUTO_SLEEP] ?: true,
+            autoUpdateCheck = prefs[KEY_AUTO_UPDATE] ?: true,
+            themeMode = theme.name,
+            lastBackupAt = createdAtMs,
+        )
+    }
+
+    /** 恢复设置。未知枚举值退回默认，不因为一份老备份把设置写坏。 */
+    suspend fun applyBackupSettings(settings: BackupSettings) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_SAMPLING_TIER] = samplingTierFromBackup(settings.samplingTier).ordinal
+            prefs[KEY_LEARNING_ENABLED] = settings.learningEnabled
+            prefs[KEY_AUTO_SLEEP] = settings.autoSleep
+            prefs[KEY_AUTO_UPDATE] = settings.autoUpdateCheck
+            prefs[KEY_THEME_MODE] = themeModeFromBackup(settings.themeMode).ordinal
+            prefs[KEY_LAST_BACKUP_AT] = settings.lastBackupAt
+        }
+    }
+
     private companion object {
         val KEY_SAMPLING_TIER = intPreferencesKey("sampling_tier")
         val KEY_LEARNING_ENABLED = booleanPreferencesKey("learning_enabled")
@@ -194,5 +235,6 @@ class SettingsStore(
         val KEY_LAST_UPDATE_CHECK = longPreferencesKey("last_update_check_at")
         val KEY_SKIPPED_UPDATE = stringPreferencesKey("skipped_update_version")
         val KEY_THEME_MODE = intPreferencesKey("theme_mode")
+        val KEY_LAST_BACKUP_AT = longPreferencesKey("last_backup_at")
     }
 }

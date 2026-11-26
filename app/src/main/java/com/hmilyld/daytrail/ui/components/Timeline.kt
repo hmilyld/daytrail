@@ -2,6 +2,7 @@
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -22,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.unit.dp
 import com.hmilyld.daytrail.ui.theme.TrailSpacing
 import com.hmilyld.daytrail.ui.theme.TrailType
@@ -61,6 +64,8 @@ fun TimelineRow(
     modifier: Modifier = Modifier,
     detail: String = "",
     showConnector: Boolean = true,
+    /** 传了才可点击；点击动作会并入同一句朗读，读屏用户才知道这一行能打开详情。 */
+    onRowClick: (() -> Unit)? = null,
 ) {
     val color = toneColor(tone)
     val spoken = if (detail.isBlank()) "$time，$title" else "$time，$title，$detail"
@@ -69,9 +74,23 @@ fun TimelineRow(
         modifier =
             modifier
                 .fillMaxWidth()
+                .then(
+                    if (onRowClick != null) {
+                        Modifier.clickable(onClick = onRowClick)
+                    } else {
+                        Modifier
+                    },
+                ).heightIn(min = 48.dp)
                 .height(IntrinsicSize.Min)
-                .clearAndSetSemantics { contentDescription = spoken }
-                .padding(vertical = 5.dp),
+                .clearAndSetSemantics {
+                    contentDescription = spoken
+                    if (onRowClick != null) {
+                        onClick {
+                            onRowClick()
+                            true
+                        }
+                    }
+                }.padding(vertical = 5.dp),
         verticalAlignment = Alignment.Top,
     ) {
         Text(

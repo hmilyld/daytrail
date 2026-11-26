@@ -66,6 +66,43 @@
     <string name="settings_permission_battery_desc">加入白名单，避免后台被杀</string>
     <string name="settings_export">导出数据</string>
     <string name="settings_export_desc">GeoJSON 与 GPX，可导进其他地图</string>
+
+    <!-- 完整备份 / 恢复 -->
+    <string name="settings_backup">备份全部数据</string>
+    <string name="settings_backup_desc">上次备份：%1$s</string>
+    <string name="settings_backup_never">从未备份</string>
+    <string name="settings_backup_old">很久没备份了</string>
+    <string name="settings_restore">从备份恢复</string>
+    <string name="settings_restore_desc">恢复轨迹、地点命名、微调与纠偏，下次启动生效</string>
+    <string name="backup_notice">备份包含完整位置历史，请妥善保存</string>
+    <string name="backup_running">正在备份…</string>
+    <string name="backup_success">备份完成，共 %1$d 张表、%2$d 字节</string>
+    <string name="backup_write_failed">无法写入备份文件</string>
+    <string name="backup_no_space">剩余空间不足，请先清理</string>
+    <string name="backup_reason_unsafe">备份文件里有不安全的路径</string>
+    <string name="backup_reason_unknown">备份文件里有意外的条目</string>
+    <string name="backup_reason_too_large">备份文件超过大小上限</string>
+    <string name="backup_reason_missing">备份文件不完整</string>
+    <string name="backup_reason_malformed">备份文件已损坏</string>
+    <string name="backup_reason_manifest">备份清单损坏</string>
+    <string name="backup_reason_sha">数据库校验失败，文件可能已损坏</string>
+    <string name="backup_reason_settings">设置数据损坏</string>
+    <string name="backup_reason_app_id">备份来自另一个包名，需你确认后才能恢复</string>
+    <string name="backup_reject_format">备份格式版本过高，请升级应用</string>
+    <string name="backup_reject_db">备份的数据库版本高于当前应用，无法恢复</string>
+    <string name="backup_reject_tables">备份缺少必要的数据表</string>
+    <string name="backup_restore_title">确认恢复</string>
+    <string name="backup_restore_body">将用备份替换当前全部数据，需要重新打开应用才生效。正在记录时请先结束记录。</string>
+    <string name="backup_restore_summary">备份时间：%1$s</string>
+    <string name="backup_restore_done_body">数据库已准备就绪，重新打开应用后生效。</string>
+    <string name="backup_restore_app_id_title">包名不同</string>
+    <string name="backup_restore_app_id_body">这份备份来自另一个应用包名（fork 用户常见）。继续会把它的全部数据恢复到本机。</string>
+    <string name="backup_restore_running">正在准备恢复…</string>
+    <string name="backup_restore_done">已准备恢复，需要重新打开应用生效</string>
+    <string name="backup_restore_safety_failed">恢复前备份当前数据失败，已中止：%1$s</string>
+    <string name="backup_restore_apply_failed">上次恢复没有完成：%1$s</string>
+    <string name="backup_restore_close">关闭应用</string>
+    <string name="backup_recording_blocked">请先结束记录，再恢复备份</string>
     <string name="settings_storage">数据占用</string>
     <string name="settings_version">版本</string>
     <string name="settings_version_notes_hint">%1$s（%2$d）· 查看本版本更新内容</string>
@@ -113,6 +150,19 @@
     <string name="places_merge_confirm_title">合并到「%1$s」？</string>
     <string name="places_merge_confirm_body">当前地点会被删除，它的停留一起归到「%1$s」。轨迹和历史停留都不受影响。</string>
     <string name="places_merge_empty">附近没有可以合并的地点</string>
+    <string name="places_share">分享地点</string>
+    <string name="places_share_chooser">分享地点到</string>
+    <string name="place_share_coordinates">纬度 %1$s  经度 %2$s（WGS-84）</string>
+    <string name="place_export_radius_visits">半径 %1$d 米 · 去过 %2$d 天</string>
+    <string name="places_export">导出全部地点</string>
+    <string name="places_export_title">导出地点</string>
+    <string name="places_export_gpx">GPX（路点）</string>
+    <string name="places_export_geojson">GeoJSON（点要素）</string>
+    <string name="places_export_success">已导出 %1$d 个地点</string>
+    <string name="places_export_empty">没有可导出的地点</string>
+    <string name="places_export_failed">导出失败：%1$s</string>
+    <string name="place_export_open_failed">无法打开目标文件</string>
+    <string name="place_export_write_failed">写入失败</string>
 
     <!-- 诊断日志 -->
     <string name="diagnostics_title">诊断日志</string>
@@ -131,6 +181,34 @@
     <string name="day_detail_route_done">已按路网补全</string>
     <string name="day_detail_route_restore">还原</string>
     <string name="day_detail_route_retry">重试</string>
+
+    <!-- 单日详情时间轴 -->
+    <string name="day_detail_timeline_title">当天行程</string>
+    <string name="timeline_detail_title">行程详情</string>
+    <string name="timeline_detail_time">时间：%1$s</string>
+    <string name="timeline_detail_place">地点 / 事项：%1$s</string>
+    <string name="timeline_detail_note">说明：%1$s</string>
+
+    <!-- 轨迹操作区 -->
+    <string name="track_actions_title">轨迹操作</string>
+    <string name="track_action_playback_title">轨迹回放</string>
+    <string name="track_action_correct_title">补全路线</string>
+    <string name="track_action_edit_title">微调显示</string>
+
+    <!-- 轨迹回放 -->
+    <string name="day_detail_playback">回放</string>
+    <string name="day_detail_playback_hint">按原始采样点回放，微调与纠偏不参与</string>
+    <string name="playback_hint">按原始采样点回放，只影响显示</string>
+    <string name="playback_live">截至现在</string>
+    <string name="playback_gap">数据缺失，正在跳过</string>
+    <string name="playback_stay">停留中 · 指针固定在地点锚点，不是卡住</string>
+    <string name="playback_play">播放</string>
+    <string name="playback_pause">暂停</string>
+    <string name="playback_stop">停止回放</string>
+    <string name="playback_auto">自动</string>
+    <string name="playback_speed_current">倍速：%1$s</string>
+    <string name="playback_auto_option">自动（全程约 40 秒）</string>
+    <string name="playback_follow">跟随</string>
 
     <!-- 手动微调 -->
     <string name="day_detail_edit_track">微调显示</string>

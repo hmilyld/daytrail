@@ -1,9 +1,11 @@
 ﻿package com.hmilyld.daytrail.ui.screens.settings
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -26,6 +28,7 @@ import androidx.compose.material.icons.outlined.MyLocation
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Restore
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -40,6 +43,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -58,12 +62,14 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.hmilyld.daytrail.AppContainer
 import com.hmilyld.daytrail.BuildConfig
 import com.hmilyld.daytrail.R
+import com.hmilyld.daytrail.data.backup.BackupRestore
 import com.hmilyld.daytrail.data.export.ExportFormat
 import com.hmilyld.daytrail.data.export.ExportRange
 import com.hmilyld.daytrail.data.export.ExportResult
 import com.hmilyld.daytrail.data.import.ConflictStrategy
 import com.hmilyld.daytrail.data.import.ImportPreview
 import com.hmilyld.daytrail.data.import.PreviewResult
+import com.hmilyld.daytrail.data.prefs.RecordingState
 import com.hmilyld.daytrail.data.prefs.SamplingTier
 import com.hmilyld.daytrail.data.prefs.ThemeMode
 import com.hmilyld.daytrail.location.RecordingService
@@ -73,6 +79,9 @@ import com.hmilyld.daytrail.ui.screens.permission.PermissionHealthSummary
 import com.hmilyld.daytrail.ui.theme.DayTrailTheme
 import com.hmilyld.daytrail.ui.theme.TrailSpacing
 import kotlinx.coroutines.launch
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 /**
  * 设置页。
@@ -97,6 +106,8 @@ fun SettingsScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val backupRecordingBlocked = stringResource(R.string.backup_recording_blocked)
+    val restoreApplyFailed = stringResource(R.string.backup_restore_apply_failed)
 
     var showExportDialog by rememberSaveable { mutableStateOf(false) }
     var showPrivacyDialog by rememberSaveable { mutableStateOf(false) }
@@ -108,6 +119,71 @@ fun SettingsScreen(
     var importPreview by remember { mutableStateOf<ImportPreview?>(null) }
     var importStrategy by remember { mutableStateOf(ConflictStrategy.SKIP) }
     var importing by remember { mutableStateOf(false) }
+
+    var showBackupNotice by rememberSaveable { mutableStateOf(false) }
+    var showRestoreConfirm by rememberSaveable { mutableStateOf(false) }
+    var showAppIdConfirm by rememberSaveable { mutableStateOf(false) }
+
+    // 备份/恢复状态放在应用级协调器里：旋转屏幕不会取消正在进行的备份。
+    val backupState by container.backupCoordinator.state.collectAsStateWithLifecycle()
+
+    val lastBackupAt by
+        container.settingsStore.lastBackupAt.collectAsStateWithLifecycle(initialValue = 0L)
+    val backupOld =
+        lastBackupAt != 0L &&
+            System.currentTimeMillis() - lastBackupAt > 30L * 24 * 60 * 60 * 1000
+    val backupSubtitle =
+        if (lastBackupAt == 0L) {
+            stringResource(R.string.settings_backup_never)
+        } else {
+            val date =
+                Instant.ofEpochMilli(lastBackupAt).atZone(ZoneId.systemDefault()).toLocalDate()
+            var text = stringResource(R.string.settings_backup_desc, date.toString())
+            if (backupOld) {
+                text += " · " + stringResource(R.string.settings_backup_old)
+            }
+            text
+        }
+
+    // 一次性结果提示
+    LaunchedEffect(backupState.message) {
+        backupState.message?.let { message ->
+            snackbarHostState.showSnackbar(message)
+            container.backupCoordinator.consumeMessage()
+        }
+    }
+
+    // 校验完成后按是否需要「包名不同」确认，分别打开对应对话框
+    LaunchedEffect(backupState.inspection) {
+        val inspection = backupState.inspection
+        if (inspection != null) {
+            showAppIdConfirm = inspection.check.needsAppIdConfirmation
+            showRestoreConfirm = !inspection.check.needsAppIdConfirmation
+        }
+    }
+
+    // 启动期替换数据库失败时提示一次
+    LaunchedEffect(Unit) {
+        val outcome = container.restoreOutcome
+        if (outcome is BackupRestore.ApplyResult.Failed) {
+            snackbarHostState.showSnackbar(
+                String.format(restoreApplyFailed, outcome.message),
+            )
+        }
+        container.restoreOutcome = null
+    }
+
+    val backupLauncher =
+        rememberLauncherForActivityResult(
+            ActivityResultContracts.CreateDocument("application/zip"),
+        ) { uri ->
+            uri?.let { container.backupCoordinator.backup(it) }
+        }
+
+    val restoreLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            uri?.let { container.backupCoordinator.inspect(it) }
+        }
 
     val autoUpdateCheck by
         container.settingsStore.autoUpdateCheck.collectAsStateWithLifecycle(initialValue = true)
@@ -215,6 +291,18 @@ fun SettingsScreen(
         onOpenPrivacy = { showPrivacyDialog = true },
         onImportClick = { importLauncher.launch(arrayOf("*/*")) },
         onExportClick = { showExportDialog = true },
+        backupSubtitle = backupSubtitle,
+        backupOld = backupOld,
+        onBackupClick = { showBackupNotice = true },
+        onRestoreClick = {
+            if (container.recordingState.state.value != RecordingState.IDLE) {
+                scope.launch {
+                    snackbarHostState.showSnackbar(backupRecordingBlocked)
+                }
+            } else {
+                restoreLauncher.launch(arrayOf("*/*"))
+            }
+        },
         autoUpdateCheck = autoUpdateCheck,
         onAutoUpdateCheckChange = { enabled ->
             scope.launch { container.settingsStore.setAutoUpdateCheck(enabled) }
@@ -305,6 +393,148 @@ fun SettingsScreen(
             },
         )
     }
+
+    if (showBackupNotice) {
+        AlertDialog(
+            onDismissRequest = { showBackupNotice = false },
+            title = { Text(stringResource(R.string.settings_backup)) },
+            text = { Text(stringResource(R.string.backup_notice)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showBackupNotice = false
+                        scope.launch {
+                            backupLauncher.launch(container.backupCoordinator.suggestedName())
+                        }
+                    },
+                ) {
+                    Text(stringResource(R.string.action_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBackupNotice = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            },
+        )
+    }
+
+    if (backupState.backupRunning) {
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text(stringResource(R.string.backup_running)) },
+            text = {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            },
+            confirmButton = {},
+        )
+    }
+
+    if (showAppIdConfirm && backupState.inspection != null) {
+        AlertDialog(
+            onDismissRequest = {
+                showAppIdConfirm = false
+                container.backupCoordinator.dismissInspection()
+            },
+            title = { Text(stringResource(R.string.backup_restore_app_id_title)) },
+            text = { Text(stringResource(R.string.backup_restore_app_id_body)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showAppIdConfirm = false
+                        showRestoreConfirm = true
+                    },
+                ) {
+                    Text(stringResource(R.string.action_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showAppIdConfirm = false
+                        container.backupCoordinator.dismissInspection()
+                    },
+                ) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            },
+        )
+    }
+
+    val inspection = backupState.inspection
+    if (showRestoreConfirm && inspection != null) {
+        val backupAt =
+            runCatching {
+                Instant
+                    .parse(inspection.manifest.createdAt)
+                    .atZone(ZoneId.systemDefault())
+                    .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
+            }.getOrDefault(inspection.manifest.createdAt)
+        AlertDialog(
+            onDismissRequest = {
+                showRestoreConfirm = false
+                container.backupCoordinator.dismissInspection()
+            },
+            title = { Text(stringResource(R.string.backup_restore_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(TrailSpacing.sm)) {
+                    Text(stringResource(R.string.backup_restore_body))
+                    Text(
+                        text = stringResource(R.string.backup_restore_summary, backupAt),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showRestoreConfirm = false
+                        container.backupCoordinator.restore(
+                            allowDifferentApplicationId =
+                                inspection.check.needsAppIdConfirmation,
+                        )
+                    },
+                ) {
+                    Text(stringResource(R.string.action_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showRestoreConfirm = false
+                        container.backupCoordinator.dismissInspection()
+                    },
+                ) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            },
+        )
+    }
+
+    if (backupState.restoreRunning) {
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text(stringResource(R.string.backup_restore_running)) },
+            text = {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            },
+            confirmButton = {},
+        )
+    }
+
+    if (backupState.restorePrepared) {
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text(stringResource(R.string.backup_restore_done)) },
+            text = { Text(stringResource(R.string.backup_restore_done_body)) },
+            confirmButton = {
+                TextButton(onClick = { (context as? Activity)?.finishAffinity() }) {
+                    Text(stringResource(R.string.backup_restore_close))
+                }
+            },
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -324,6 +554,10 @@ private fun SettingsContent(
     onOpenPrivacy: () -> Unit,
     onImportClick: () -> Unit,
     onExportClick: () -> Unit,
+    backupSubtitle: String = "",
+    backupOld: Boolean = false,
+    onBackupClick: () -> Unit = {},
+    onRestoreClick: () -> Unit = {},
     modifier: Modifier = Modifier,
     autoUpdateCheck: Boolean = true,
     onAutoUpdateCheckChange: (Boolean) -> Unit = {},
@@ -439,6 +673,19 @@ private fun SettingsContent(
                             title = stringResource(R.string.settings_import),
                             subtitle = stringResource(R.string.settings_import_desc),
                             onClick = onImportClick,
+                        )
+                        SettingsNavRow(
+                            icon = Icons.Outlined.Storage,
+                            title = stringResource(R.string.settings_backup),
+                            subtitle = backupSubtitle,
+                            onClick = onBackupClick,
+                            subtitleWarning = backupOld,
+                        )
+                        SettingsNavRow(
+                            icon = Icons.Outlined.Restore,
+                            title = stringResource(R.string.settings_restore),
+                            subtitle = stringResource(R.string.settings_restore_desc),
+                            onClick = onRestoreClick,
                         )
                         SettingsNavRow(
                             icon = Icons.AutoMirrored.Outlined.ReceiptLong,
