@@ -24,6 +24,15 @@ Set-ToolchainEnvironment -Root $root | Out-Null
 
 $gradlew = Join-Path $root 'gradlew.bat'
 
+# dist/ 只放临时测试产物（手动拷过去的测试 APK、一键改造向导生成的卡片等）。
+# 发布前必跑本脚本，这里统一清空：避免把上一版的测试包误当成本次发布产物，
+# 或留下一个「看起来能装」的旧包被覆盖安装。
+$dist = Join-Path $root 'dist'
+if (Test-Path $dist) {
+    Get-ChildItem -Path $dist -Force | Remove-Item -Force -Recurse
+    Write-Host '已清空 dist/（临时测试产物）' -ForegroundColor DarkGray
+}
+
 function Invoke-Gradle {
     param([string[]]$Tasks)
     # Windows PowerShell 5.1 在 $ErrorActionPreference='Stop' 下会把原生命令的
